@@ -1,0 +1,145 @@
+// Version: 1.0.0
+type AnswerSubmission__682811379 =
+  {
+    orderedItems : [Nat];
+    questionId : Nat;
+    selectedOptions : [Nat];
+    textAnswer : Text
+  };
+type Data__791452850<K, V> =
+  {var count : Nat__490723111; kvs : [var ?(K, V)]};
+type ExternalBlob__671167343 = Blob;
+type Internal__8484328<K, V> =
+  {children : [var ?Node__46230540<K, V>]; data : Data__791452850<K, V>};
+type Leaf__809889148<K, V> = {data : Data__791452850<K, V>};
+type Nat__490723111 = Nat__920180692;
+type Nat__920180692 = Nat;
+type Node__46230540<K, V> =
+  {#internal : Internal__8484328<K, V>; #leaf : Leaf__809889148<K, V>};
+type QuestionId__77764146 = Nat;
+type QuestionMastery__929431226 =
+  {
+    correctStreak : Nat;
+    isMastered : Bool;
+    questionId : QuestionId__77764146;
+    testId : TestId__174543168;
+    updatedAt : Timestamp__301639476;
+    userId : UserId__158757552
+  };
+type QuestionResult__22639345 = {isCorrect : Bool; questionId : Nat};
+type QuestionType__788894805 = {#dragOrder; #mcMulti; #mcSingle; #textInput};
+type Question__705387906 =
+  {
+    audioBlob : ?Blob;
+    audioDownloadStatus : ?Text;
+    audioUrl : ?Text;
+    correctAnswers : [Nat];
+    correctOrder : [Nat];
+    correctText : Text;
+    explanation : ?Text;
+    id : Nat;
+    imageBlob : ?ExternalBlob__671167343;
+    options : [Text];
+    orderIndex : Nat;
+    questionType : QuestionType__788894805;
+    questionUpdatedAt : Int;
+    sectionId : ?Nat;
+    testId : Nat;
+    text : Text
+  };
+type SectionResult__565553533 =
+  {score : Nat; sectionId : Nat; sectionName : Text; totalQuestions : Nat};
+type Section__723423383 =
+  {
+    createdAt : Int;
+    description : Text;
+    id : Nat;
+    name : Text;
+    testId : Nat;
+    updatedAt : Int
+  };
+type TestId__174543168 = Nat;
+type TestProgress__1009822056 =
+  {
+    answers : [AnswerSubmission__682811379];
+    savedAt : Int;
+    selectedSectionIds : [Nat];
+    sessionId : Text;
+    testId : Nat;
+    username : Text
+  };
+type TestResult__168438620 =
+  {
+    completedAt : Int;
+    questionResults : [QuestionResult__22639345];
+    score : Nat;
+    sectionResults : [SectionResult__565553533];
+    sessionId : Text;
+    testId : Nat;
+    timeSpentSeconds : Nat;
+    totalQuestions : Nat;
+    username : Text
+  };
+type Test__434629499 =
+  {
+    createdAt : Int;
+    description : Text;
+    id : Nat;
+    name : Text;
+    updatedAt : Int
+  };
+type Timestamp__301639476 = Int;
+type UserId__158757552 = Text;
+type UserRecord__441343983 =
+  {
+    displayName : ?Text;
+    isActive : Bool;
+    passwordHash : Text;
+    role : UserRole__549269184;
+    totpEnabled : Bool;
+    totpSecret : Text;
+    username : Text
+  };
+type UserRole__549269184 = {#admin; #user};
+actor {
+  stable mastery :
+    {
+      var root : Node__46230540<Text, QuestionMastery__929431226>;
+      var size : Nat__490723111
+    };
+  stable maxConcurrentSessions : Nat;
+  stable nextQuestionId : {var value : Nat};
+  stable nextSectionId : {var value : Nat};
+  stable nextTestId : {var value : Nat};
+  stable nextTotpCounter : {var value : Nat};
+  stable questions :
+    {
+      var root : Node__46230540<Nat, Question__705387906>;
+      var size : Nat__490723111
+    };
+  stable sections :
+    {
+      var root : Node__46230540<Nat, Section__723423383>;
+      var size : Nat__490723111
+    };
+  stable testProgress :
+    {
+      var root : Node__46230540<Text, TestProgress__1009822056>;
+      var size : Nat__490723111
+    };
+  stable testResults :
+    {
+      var root : Node__46230540<Text, TestResult__168438620>;
+      var size : Nat__490723111
+    };
+  stable tests :
+    {
+      var root : Node__46230540<Nat, Test__434629499>;
+      var size : Nat__490723111
+    };
+  stable users :
+    {
+      var root : Node__46230540<Text, UserRecord__441343983>;
+      var size : Nat__490723111
+    }
+};
