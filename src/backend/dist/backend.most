@@ -30,8 +30,6 @@ type QuestionResult__22639345 = {isCorrect : Bool; questionId : Nat};
 type QuestionType__788894805 = {#dragOrder; #mcMulti; #mcSingle; #textInput};
 type Question__705387906 =
   {
-    audioBlob : ?Blob;
-    audioDownloadStatus : ?Text;
     audioUrl : ?Text;
     correctAnswers : [Nat];
     correctOrder : [Nat];

@@ -4,7 +4,7 @@ import AuthTypes "../types/auth";
 import TestLib "../lib/tests";
 import AuthLib "../lib/auth";
 import Time "mo:core/Time";
-import Error "mo:core/Error";
+import SectionTypes "../types/sections";
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Tests API mixin — public surface for test and question management.
@@ -19,6 +19,7 @@ mixin (
   users : Map.Map<Text, AuthTypes.UserRecord>,
   tests : Map.Map<Nat, TestTypes.Test>,
   questions : Map.Map<Nat, TestTypes.Question>,
+  sections : Map.Map<Nat, SectionTypes.Section>,
   nextTestId : { var value : Nat },
   nextQuestionId : { var value : Nat },
 ) {
@@ -102,9 +103,6 @@ mixin (
           sectionId = input.sectionId;
           explanation = input.explanation;
           audioUrl = input.audioUrl;
-          // Preserve audio blob data and download status — never drop stored audio on text-only edits
-          audioBlob = existing.audioBlob;
-          audioDownloadStatus = existing.audioDownloadStatus;
           questionUpdatedAt = Time.now();
         };
         questions.add(questionId, updated);
@@ -146,83 +144,18 @@ mixin (
     deleted;
   };
 
-  /// Fetch audio from audioUrl via HTTP outcall and store it in the question's audioBlob field.
-  /// Returns #ok on success, #err(Text) with an error message on failure.
-  /// Admin only.
-  public shared func downloadAudio(username : Text, questionId : Nat, audioUrl : Text) : async { #ok; #err : Text } {
-    AuthLib.requireAdmin(users, username);
-    // Look up the question
-    let question = switch (questions.get(questionId)) {
-      case null { return #err("Question not found") };
-      case (?q) { q };
-    };
-    // Mark as downloading
-    questions.add(questionId, { question with audioUrl = ?audioUrl; audioDownloadStatus = ?"downloading" });
-    // IC management canister HTTP outcall
-    let ic : actor {
-      http_request : {
-        url : Text;
-        max_response_bytes : ?Nat64;
-        headers : [{ name : Text; value : Text }];
-        body : ?Blob;
-        method : { #get; #head; #post };
-        transform : ?{
-          function : shared ({ response : { status : Nat; headers : [{ name : Text; value : Text }]; body : Blob }; context : Blob }) -> async { status : Nat; headers : [{ name : Text; value : Text }]; body : Blob };
-          context : Blob;
-        };
-      } -> async { status : Nat; headers : [{ name : Text; value : Text }]; body : Blob };
-    } = actor "aaaaa-aa";
+  // ── Bulk / manifest endpoints (public query, no auth) ─────────────────────────────────────
 
-    // Limit response to exactly 2 MiB (2*1024*1024) — IC counts headers+body together;
-    // using 2_097_152 leaves headroom versus the 2_000_000 hard ceiling.
-    let maxBytes : Nat64 = 2_097_152;
-    try {
-      let response = await ic.http_request({
-        url = audioUrl;
-        max_response_bytes = ?maxBytes;
-        headers = [];
-        body = null;
-        method = #get;
-        transform = null;
-      });
-      if (response.status >= 200 and response.status < 300) {
-        let updatedQ = switch (questions.get(questionId)) {
-          case null { return #err("Question not found after download: id=" # debug_show(questionId)) };
-          case (?q) { q };
-        };
-        questions.add(questionId, { updatedQ with audioBlob = ?response.body; audioDownloadStatus = ?"ready" });
-        // Bump parent test updatedAt
-        switch (tests.get(updatedQ.testId)) {
-          case (?t) { tests.add(updatedQ.testId, { t with updatedAt = Time.now() }) };
-          case null {};
-        };
-        #ok
-      } else {
-        let errMsg = "HTTP " # debug_show(response.status);
-        let failQ = switch (questions.get(questionId)) {
-          case null { return #err(errMsg) };
-          case (?q) { q };
-        };
-        questions.add(questionId, { failQ with audioDownloadStatus = ?("error: " # errMsg) });
-        #err(errMsg)
-      };
-    } catch (e) {
-      let errMsg = "Download failed: " # e.message();
-      let failQ = switch (questions.get(questionId)) {
-        case (?q) { q };
-        case null { return #err(errMsg) };
-      };
-      questions.add(questionId, { failQ with audioDownloadStatus = ?("error: " # errMsg) });
-      #err(errMsg)
-    };
+  /// Returns a lightweight version stamp. Frontend calls this first to check if local
+  /// cache is stale — only one GET needed to determine if a full refresh is required.
+  public query func getDataManifest() : async TestTypes.DataManifest {
+    TestLib.buildDataManifest(tests, questions, sections);
   };
 
-  /// Return the stored audio blob for a question (available to all users).
-  public query func getAudioBlob(questionId : Nat) : async ?Blob {
-    switch (questions.get(questionId)) {
-      case null { null };
-      case (?q) { q.audioBlob };
-    };
+  /// Returns all tests with nested questions and sections plus the manifest.
+  /// Frontend calls this only when the manifest checksum indicates a change.
+  public query func getAllTestData() : async TestTypes.AllTestData {
+    TestLib.buildAllTestData(tests, questions, sections);
   };
 
   public query func listQuestionsForTest(testId : Nat) : async [TestTypes.Question] {

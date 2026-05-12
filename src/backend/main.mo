@@ -24,6 +24,9 @@ import MasteryTypes "types/mastery";
 
 
 
+
+
+
 actor {
   // ── Object storage infrastructure ───────────────────────────────────────
   include MixinObjectStorage();
@@ -43,11 +46,12 @@ actor {
   let nextTotpCounter = { var value : Nat = 1 };
 
   // ── Seed admin account & downgrade legacy admins ──────────────────────────
-  do { AuthLib.seedAdmin(users, "abcd", "abcd") };
+  // Username and password are both 'abcd' — defined as constants in AuthLib.
+  do { AuthLib.seedAdmin(users, AuthLib.SEEDED_ADMIN_USERNAME, AuthLib.SEEDED_ADMIN_PASSWORD) };
 
   // ── Mixins ───────────────────────────────────────────────────────────────
   include AuthApi(users, nextTotpCounter);
-  include TestsApi(users, tests, questions, nextTestId, nextQuestionId);
+  include TestsApi(users, tests, questions, sections, nextTestId, nextQuestionId);
   include ResultsApi(questions, sections, testResults, testProgress, mastery);
   include SectionsApi(users, tests, questions, sections, nextSectionId);
   include MasteryApi(users, tests, questions, mastery, testResults, sections);

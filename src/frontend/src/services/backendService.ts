@@ -12,10 +12,12 @@
 import type {
   AdminDashboardStats,
   AdminUserInfo,
+  AllTestData,
   AnswerSubmission,
   CreateQuestionInput,
   CreateSectionInput,
   CreateTestInput,
+  DataManifest,
   LoginResult,
   Question,
   QuestionMastery,
@@ -42,10 +44,12 @@ export { QuestionType, Variant_admin_user };
 export type {
   AdminDashboardStats,
   AdminUserInfo,
+  AllTestData,
   AnswerSubmission,
   CreateQuestionInput,
   CreateSectionInput,
   CreateTestInput,
+  DataManifest,
   LoginResult,
   Question,
   QuestionMastery,
@@ -164,6 +168,7 @@ export interface BackendService {
     testId: bigint,
     sessionId: string,
     submissions: Array<AnswerSubmission>,
+    timeSpentSeconds: bigint,
   ): Promise<TestResult>;
   getTestResult(username: string, testId: bigint): Promise<TestResult | null>;
   getTestResultBySession(
@@ -189,6 +194,10 @@ export interface BackendService {
     adminUsername: string,
     targetUsername: string,
   ): Promise<boolean>;
+  adminDeleteUser(
+    adminUsername: string,
+    targetUsername: string,
+  ): Promise<SimpleResult>;
   adminGetUserProgress(
     adminUsername: string,
     targetUsername: string,
@@ -213,11 +222,9 @@ export interface BackendService {
     sessionId: string,
   ): Promise<ReviewData | null>;
 
-  // ── Audio ─────────────────────────────────────────────────────────────────
-  downloadAudio(
-    username: string,
-    questionId: bigint,
-    audioUrl: string,
-  ): Promise<SimpleResult>;
-  getAudioBlob(questionId: bigint): Promise<Uint8Array | null>;
+  // ── Data Sync ─────────────────────────────────────────────────────────────
+  /** Single version-check call: returns the global checksum + counts. */
+  getDataManifest(): Promise<DataManifest>;
+  /** Bulk fetch: returns full manifest + all tests with nested questions & sections. */
+  getAllTestData(): Promise<AllTestData>;
 }

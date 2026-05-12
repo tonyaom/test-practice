@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { RichTextDisplay } from "../../components/RichTextDisplay";
+import { useDataSyncContext } from "../../context/DataSyncContext";
 import { useAuth } from "../../hooks/useAuth";
 import { useBackend } from "../../hooks/useBackend";
 import { QuestionType } from "../../types";
@@ -51,6 +52,8 @@ export function TestResultPage() {
   const testIdBig = BigInt(testId);
   const searchParams = useSearch({ strict: false }) as Record<string, string>;
   const urlSessionId = searchParams?.sessionId ?? "";
+  const { getTest: getCachedTest, getQuestions: getCachedQuestions } =
+    useDataSyncContext();
 
   // Load the completed session snapshot first (saved just before submit in TakeTestPage).
   // Falls back to the active session for backward compatibility (old sessions before snapshot was added).
@@ -91,20 +94,49 @@ export function TestResultPage() {
   const { data: questions = [] } = useQuery<Question[]>({
     queryKey: ["questions", testId],
     queryFn: async () => {
+      const cachedQs = getCachedQuestions(testId);
+      if (cachedQs.length > 0) {
+        return cachedQs
+          .map((q) => ({
+            id: BigInt(q.id),
+            testId: BigInt(q.testId),
+            orderIndex: BigInt(q.orderIndex),
+            text: q.text,
+            questionType: q.questionType as Question["questionType"],
+            options: q.options,
+            correctAnswers: q.correctAnswers.map(BigInt),
+            correctText: q.correctText,
+            correctOrder: q.correctOrder.map(BigInt),
+            sectionId: q.sectionId != null ? BigInt(q.sectionId) : undefined,
+            questionUpdatedAt: BigInt(q.questionUpdatedAt),
+            explanation: q.explanation ?? undefined,
+          }))
+          .sort((a, b) => Number(a.orderIndex) - Number(b.orderIndex));
+      }
       if (!backend) return [];
       const qs = await backend.listQuestionsForTest(testIdBig);
       return qs.sort((a, b) => Number(a.orderIndex) - Number(b.orderIndex));
     },
-    enabled: !!backend,
+    enabled: true,
   });
 
   const { data: test } = useQuery<Test | null>({
     queryKey: ["test", testId],
     queryFn: async () => {
+      const cached = getCachedTest(testId);
+      if (cached) {
+        return {
+          id: BigInt(cached.id),
+          name: cached.name,
+          description: cached.description,
+          updatedAt: BigInt(cached.updatedAt),
+          createdAt: BigInt(0),
+        };
+      }
       if (!backend) return null;
       return backend.getTest(testIdBig);
     },
-    enabled: !!backend,
+    enabled: true,
   });
 
   const { data: masteryList = [] } = useQuery<QuestionMastery[]>({

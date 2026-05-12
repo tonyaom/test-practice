@@ -8,6 +8,11 @@ import TOTPLib "totp";
 /// profile management, and TOTP-based 2FA lifecycle.
 /// No API concerns — all functions receive explicit state parameters.
 module {
+  /// Single source of truth for the seeded admin username and password.
+  /// Referenced by seedAdmin, requireNotSeededAdmin, and tests.
+  /// Defined once here to prevent credential typos across the codebase.
+  public let SEEDED_ADMIN_USERNAME : Text = "abcd";
+  public let SEEDED_ADMIN_PASSWORD : Text = "abcd";
   // Simple deterministic hash using Char.toNat32 (built-in).
   // Not cryptographically secure but sufficient for this app.
   public func hashPassword(password : Text) : Text {
@@ -127,6 +132,34 @@ module {
     };
   };
 
+  /// Guard: traps if the given username is the seeded system administrator.
+  /// Use before any destructive admin operation (deactivate, delete).
+  /// Guard: traps if the given username is the seeded system administrator.
+  /// Use before any destructive admin operation (deactivate, delete).
+  public func requireNotSeededAdmin(username : Text) {
+    if (username == SEEDED_ADMIN_USERNAME) {
+      Runtime.trap("Cannot modify the system administrator account");
+    };
+  };
+
+  /// Permanently delete a user record.
+  /// Callers must have already verified:
+  ///   - caller is admin (requireAdmin)
+  ///   - target is not the seeded admin (requireNotSeededAdmin)
+  ///   - target is not the caller themselves
+  public func deleteUser(
+    users : Map.Map<Text, Types.UserRecord>,
+    username : Text,
+  ) : { #ok; #err : Text } {
+    switch (users.get(username)) {
+      case null { #err("User not found") };
+      case (?_) {
+        users.remove(username);
+        #ok;
+      };
+    };
+  };
+
   /// Returns the role for the given username, or null if not found.
   public func getUserRole(users : Map.Map<Text, Types.UserRecord>, username : Text) : ?Types.UserRole {
     switch (users.get(username)) {
@@ -143,13 +176,16 @@ module {
     };
   };
 
-  /// Seed the admin account if it doesn't exist. Ensure it has role=#admin.
-  /// Downgrade all other users who were previously assigned role=#admin.
+  /// Seed the admin account if it doesn't exist. Ensure it has role=#admin and isActive=true.
+  /// Downgrades all other users who were previously assigned role=#admin to #user.
+  /// Uses a two-pass strategy (collect first, update after) to avoid mutating the Map
+  /// while iterating — the root cause of the v47 login corruption bug.
   public func seedAdmin(
     users : Map.Map<Text, Types.UserRecord>,
     adminUsername : Text,
     adminPassword : Text,
   ) {
+    // Pass 1 — ensure admin account exists, has role=#admin, and isActive=true.
     switch (users.get(adminUsername)) {
       case null {
         let adminRecord : Types.UserRecord = {
@@ -164,17 +200,27 @@ module {
         users.add(adminUsername, adminRecord);
       };
       case (?existing) {
-        if (existing.role != #admin) {
-          users.add(adminUsername, { existing with role = #admin });
+        // Repair role or isActive if either is wrong; never touch passwordHash.
+        if (existing.role != #admin or not existing.isActive) {
+          users.add(adminUsername, { existing with role = #admin; isActive = true });
         };
       };
     };
-    // Downgrade all non-admin users that were previously registered as #admin
-    users.forEach(func(key, record) {
-      if (record.username != adminUsername and record.role == #admin) {
-        users.add(key, { record with role = #user });
+    // Pass 2 — collect keys of rogue admins FIRST (snapshot), then downgrade.
+    // Never mutate `users` while iterating it — doing so corrupts the B-tree.
+    let allKeys : [Text] = users.keys().toArray();
+    for (key in allKeys.values()) {
+      if (key != adminUsername) {
+        switch (users.get(key)) {
+          case (?record) {
+            if (record.role == #admin) {
+              users.add(key, { record with role = #user });
+            };
+          };
+          case null {};
+        };
       };
-    });
+    };
   };
 
   // ── 2FA helpers ────────────────────────────────────────────────────────────

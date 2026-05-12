@@ -7,11 +7,13 @@ import {
   createRoute,
   createRouter,
 } from "@tanstack/react-router";
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import { Layout } from "./components/Layout";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
+import { applyTheme, getStoredTheme } from "./utils/darkModeStorage";
 
+import { DataSyncProvider } from "./context/DataSyncContext";
 // Eagerly-loaded pages (no rich text editor, safe for login flow)
 import { AdminDashboardPage } from "./features/admin/AdminDashboardPage";
 import { AdminTestsPage } from "./features/admin/AdminTestsPage";
@@ -52,11 +54,19 @@ const TestHistoryPage = lazy(() =>
 );
 
 function RootComponent() {
+  // Apply stored theme on mount to prevent FOUC
+  useEffect(() => {
+    const stored = getStoredTheme();
+    if (stored) applyTheme(stored);
+  }, []);
+
   return (
     <AuthProvider>
-      <Layout>
-        <Outlet />
-      </Layout>
+      <DataSyncProvider>
+        <Layout>
+          <Outlet />
+        </Layout>
+      </DataSyncProvider>
       <Toaster position="bottom-right" />
     </AuthProvider>
   );

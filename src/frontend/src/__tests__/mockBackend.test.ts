@@ -281,6 +281,7 @@ describe("mockBackend.submitTestAnswers", () => {
           textAnswer: "",
         },
       ],
+      BigInt(60),
     );
     expect(result).toHaveProperty("testId");
     expect(result).toHaveProperty("score");

@@ -560,11 +560,12 @@ export function createRestBackendService(baseUrl: string): BackendService {
       testId,
       sessionId,
       submissions: AnswerSubmission[],
+      timeSpentSeconds: bigint,
     ): Promise<TestResult> => {
       return request(
         "POST",
         `/api/tests/${String(testId)}/sessions/${encodeURIComponent(sessionId)}/submit`,
-        { username, submissions },
+        { username, submissions, timeSpentSeconds: String(timeSpentSeconds) },
       );
     },
 
@@ -652,6 +653,25 @@ export function createRestBackendService(baseUrl: string): BackendService {
         { callerUsername: adminUsername },
       );
       return res.deactivated;
+    },
+
+    // DELETE /api/admin/users/:username
+    adminDeleteUser: async (
+      adminUsername,
+      targetUsername,
+    ): Promise<SimpleResult> => {
+      try {
+        const res = await request<{ ok: boolean; error?: string }>(
+          "DELETE",
+          `/api/admin/users/${encodeURIComponent(targetUsername)}`,
+          { callerUsername: adminUsername },
+        );
+        if (!res.ok)
+          return { __kind__: "err", err: res.error ?? "Delete failed" };
+        return { __kind__: "ok", ok: null };
+      } catch {
+        return { __kind__: "err", err: "Delete failed" };
+      }
     },
 
     // GET /api/admin/users/:username/progress/:testId
@@ -763,33 +783,21 @@ export function createRestBackendService(baseUrl: string): BackendService {
       );
     },
 
-    // POST /api/questions/:questionId/audio
-    downloadAudio: async (
-      username,
-      questionId,
-      audioUrl,
-    ): Promise<SimpleResult> => {
-      return request("POST", `/api/questions/${String(questionId)}/audio`, {
-        username,
-        audioUrl,
-      });
+    // ── Data Sync ───────────────────────────────────────────────────
+    // GET /api/data/manifest
+    getDataManifest: async () => {
+      return request<import("../services/backendService").DataManifest>(
+        "GET",
+        "/api/data/manifest",
+      );
     },
 
-    // GET /api/questions/:questionId/audio
-    getAudioBlob: async (questionId): Promise<Uint8Array | null> => {
-      try {
-        const res = await fetch(
-          `${baseUrl}/api/questions/${String(questionId)}/audio`,
-          {
-            headers: authHeaders(),
-          },
-        );
-        if (!res.ok) return null;
-        const buf = await res.arrayBuffer();
-        return new Uint8Array(buf);
-      } catch {
-        return null;
-      }
+    // GET /api/data/all
+    getAllTestData: async () => {
+      return request<import("../services/backendService").AllTestData>(
+        "GET",
+        "/api/data/all",
+      );
     },
   };
 }

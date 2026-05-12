@@ -25,9 +25,7 @@ module {
     explanation : ?Text; // optional rich-text explanation shown after answering (HTML string)
     orderIndex : Nat;
     questionUpdatedAt : Int; // bumps parent test's updatedAt on any question change
-    audioUrl : ?Text;             // source URL supplied by admin
-    audioBlob : ?Blob;            // raw audio bytes fetched from audioUrl and stored in canister
-    audioDownloadStatus : ?Text;  // null | "downloading" | "ready" | "error"
+    audioUrl : ?Text;             // source URL supplied by admin — played directly in the browser
   };
 
   public type Test = {
@@ -36,6 +34,42 @@ module {
     description : Text;
     createdAt : Int;
     updatedAt : Int; // updated whenever test metadata or any child question/section changes
+  };
+
+  /// Lightweight version stamp — frontend compares checksum to decide if a full refresh is needed.
+  public type DataManifest = {
+    globalUpdatedAt : Text;  // most recent updatedAt across all tests/questions/sections, as nanosecond Text
+    testCount : Nat;
+    questionCount : Nat;
+    sectionCount : Nat;
+    checksum : Text;         // "<testCount>_<questionCount>_<sectionCount>_<globalUpdatedAt>"
+  };
+
+  /// A Test record with its questions and sections nested inline.
+  public type TestFullData = {
+    id : Nat;
+    name : Text;
+    description : Text;
+    createdAt : Int;
+    updatedAt : Int;
+    questions : [Question];
+    sections : [SectionData];
+  };
+
+  /// Minimal section data embedded in TestFullData (mirrors types/sections.mo Section).
+  public type SectionData = {
+    id : Nat;
+    testId : Nat;
+    name : Text;
+    description : Text;
+    createdAt : Int;
+    updatedAt : Int;
+  };
+
+  /// Full bulk response: manifest + all tests with nested children.
+  public type AllTestData = {
+    manifest : DataManifest;
+    tests : [TestFullData];
   };
 
   public type CreateTestInput = {

@@ -709,3 +709,52 @@
   color: oklch(var(--muted-foreground));
   font-weight: 600;
 }
+
+/* ── Celebration confetti ─────────────────────────────────────────────────── */
+.celebration-confetti {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.confetti-particle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  top: -10px;
+  border-radius: 2px;
+  animation: confettiFall 2s ease-in forwards;
+}
+@keyframes confettiFall {
+  0% {
+    transform: translateY(0) rotate(0deg);
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(100vh) rotate(720deg);
+    opacity: 0;
+  }
+}
+
+/* ── Login gradient background ───────────────────────────────────────────── */
+.login-gradient {
+  background: radial-gradient(
+    ellipse at 60% 0%,
+    oklch(var(--primary) / 0.08) 0%,
+    oklch(var(--background)) 60%
+  );
+}
+
+/* ── Streak badge gold variant ───────────────────────────────────────────── */
+.streak-badge-gold {
+  background: linear-gradient(
+    135deg,
+    oklch(0.85 0.12 80 / 0.25),
+    oklch(0.78 0.16 60 / 0.2)
+  );
+  border-color: oklch(0.75 0.14 70 / 0.5);
+  color: oklch(0.55 0.16 65);
+}

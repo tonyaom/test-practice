@@ -27,7 +27,6 @@ import {
   Info,
   Layers,
   LayoutDashboard,
-  Volume2,
   XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -35,6 +34,7 @@ import { toast } from "sonner";
 import { QuestionRenderer } from "../../components/QuestionRenderer";
 import { RichTextDisplay } from "../../components/RichTextDisplay";
 import { SectionProgressBar } from "../../components/SectionProgressBar";
+import { useDataSyncContext } from "../../context/DataSyncContext";
 import { useAuth } from "../../hooks/useAuth";
 import { useBackend } from "../../hooks/useBackend";
 import { QuestionType } from "../../types";
@@ -47,11 +47,7 @@ import {
   getFontSize,
   setFontSize,
 } from "../../utils/fontSizeStorage";
-import {
-  getTestCache,
-  isCacheValid,
-  saveTestCache,
-} from "../../utils/offlineCache";
+import { getTestCache } from "../../utils/offlineCache";
 import {
   loadSession,
   loadStoredAnswers,
@@ -150,6 +146,8 @@ export function TakeTestPage() {
   const backend = useBackend();
   const username = session?.username ?? "";
   const testIdBig = BigInt(testId);
+  const { getQuestions: getCachedQuestions, getTest: getCachedTest } =
+    useDataSyncContext();
 
   // Read params from URL search
   const searchParams = useSearch({ strict: false }) as Record<string, string>;
@@ -174,105 +172,34 @@ export function TakeTestPage() {
     urlSessionId ||
       Math.random().toString(36).slice(2) + Date.now().toString(36),
   );
-
   const { data: rawQuestions = [], isLoading } = useQuery<Question[]>({
     queryKey: ["questions", testId],
     queryFn: async () => {
-      if (!backend) return [];
-      // Try offline cache first
-      const cached = getTestCache(testId);
-      if (cached) {
-        // Also check if the server version is newer
-        try {
-          const serverTest = await backend.getTest(testIdBig);
-          if (
-            serverTest &&
-            isCacheValid(cached.updatedAt, String(serverTest.updatedAt))
-          ) {
-            // Cache is current — deserialise from cache
-            return cached.questions.map((q) => ({
-              id: BigInt(q.id),
-              testId: BigInt(q.testId),
-              orderIndex: BigInt(q.orderIndex),
-              text: q.text,
-              questionType: q.questionType as Question["questionType"],
-              options: q.options,
-              correctAnswers: q.correctAnswers.map(BigInt),
-              correctText: q.correctText,
-              correctOrder: q.correctOrder.map(BigInt),
-              sectionId: q.sectionId != null ? BigInt(q.sectionId) : undefined,
-              questionUpdatedAt: BigInt(q.questionUpdatedAt),
-              explanation: q.explanation ?? undefined,
-            }));
-          }
-          // Cache stale — fetch fresh and update cache
-          if (serverTest) {
-            const [qs, sects] = await Promise.all([
-              backend.listQuestionsForTest(testIdBig),
-              backend.listSectionsForTest(testIdBig),
-            ]);
-            saveTestCache(
-              testId,
-              {
-                test: {
-                  id: testId,
-                  name: serverTest.name,
-                  description: serverTest.description,
-                  updatedAt: String(serverTest.updatedAt),
-                },
-                questions: qs.map((q) => ({
-                  id: String(q.id),
-                  testId: String(q.testId),
-                  orderIndex: String(q.orderIndex),
-                  text: q.text,
-                  questionType: q.questionType,
-                  options: q.options,
-                  correctAnswers: q.correctAnswers.map(String),
-                  correctText: q.correctText,
-                  correctOrder: q.correctOrder.map(String),
-                  sectionId:
-                    q.sectionId != null ? String(q.sectionId) : undefined,
-                  questionUpdatedAt: String(q.questionUpdatedAt),
-                  explanation: q.explanation ?? undefined,
-                })),
-                sections: sects.map((s) => ({
-                  id: String(s.id),
-                  testId: String(s.testId),
-                  name: s.name,
-                  description: s.description,
-                  updatedAt: String(s.updatedAt),
-                })),
-                updatedAt: String(serverTest.updatedAt),
-              },
-              String(serverTest.updatedAt),
-            );
-            return qs.sort(
-              (a, b) => Number(a.orderIndex) - Number(b.orderIndex),
-            );
-          }
-        } catch {
-          // Network error — fall back to cache
-          return cached.questions.map((q) => ({
-            id: BigInt(q.id),
-            testId: BigInt(q.testId),
-            orderIndex: BigInt(q.orderIndex),
-            text: q.text,
-            questionType: q.questionType as Question["questionType"],
-            options: q.options,
-            correctAnswers: q.correctAnswers.map(BigInt),
-            correctText: q.correctText,
-            correctOrder: q.correctOrder.map(BigInt),
-            sectionId: q.sectionId != null ? BigInt(q.sectionId) : undefined,
-            questionUpdatedAt: BigInt(q.questionUpdatedAt),
-            explanation: q.explanation ?? undefined,
-          }));
-        }
+      // Try context cache first (zero backend calls if cache is fresh)
+      const cachedQs = getCachedQuestions(testId);
+      if (cachedQs.length > 0) {
+        return cachedQs.map((q) => ({
+          id: BigInt(q.id),
+          testId: BigInt(q.testId),
+          orderIndex: BigInt(q.orderIndex),
+          text: q.text,
+          questionType: q.questionType as Question["questionType"],
+          options: q.options,
+          correctAnswers: q.correctAnswers.map(BigInt),
+          correctText: q.correctText,
+          correctOrder: q.correctOrder.map(BigInt),
+          sectionId: q.sectionId != null ? BigInt(q.sectionId) : undefined,
+          questionUpdatedAt: BigInt(q.questionUpdatedAt),
+          explanation: q.explanation ?? undefined,
+          audioUrl: q.audioUrl ?? undefined,
+        }));
       }
-      // No cache — fetch from backend
+      if (!backend) return [];
+      // Fallback: fetch from backend
       const qs = await backend.listQuestionsForTest(testIdBig);
       return qs.sort((a, b) => Number(a.orderIndex) - Number(b.orderIndex));
     },
-    enabled: !!backend,
+    enabled: true,
   });
 
   // Fetch mastery data (best-effort — no mastery = show all questions)
@@ -324,10 +251,20 @@ export function TakeTestPage() {
   const { data: testInfo } = useQuery({
     queryKey: ["test", testId],
     queryFn: async () => {
+      const cached = getCachedTest(testId);
+      if (cached) {
+        return {
+          id: BigInt(cached.id),
+          name: cached.name,
+          description: cached.description,
+          updatedAt: BigInt(cached.updatedAt),
+          createdAt: BigInt(0),
+        };
+      }
       if (!backend) return null;
       return backend.getTest(testIdBig);
     },
-    enabled: !!backend,
+    enabled: true,
   });
 
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -340,7 +277,7 @@ export function TakeTestPage() {
   const autoAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioElementRef = useRef<HTMLAudioElement | null>(null);
 
   // Font size state (numeric px value, e.g. 16)
   const [fontSize, setFontSizeState] = useState<number>(() => getFontSize());
@@ -506,11 +443,11 @@ export function TakeTestPage() {
         testIdBig,
         sessionIdRef.current,
         submissions,
+        BigInt(getElapsedSeconds(sessionIdRef.current)),
       );
     },
-    onSuccess: () => {
+    onSuccess: (results) => {
       // Snapshot the completed session's questionIds BEFORE removing the active session.
-      // TestResultPage reads this snapshot so Try Again can replay the exact same questions.
       const completedSession = loadSession(sessionIdRef.current);
       saveCompletedSessionSnapshot(sessionIdRef.current, {
         questionIds:
@@ -519,14 +456,25 @@ export function TakeTestPage() {
         randomizeAnswers: initialRandomizeAnswers.current,
         selectedSectionIds,
       });
-      // Clean up this session + timer from localStorage
       removeSession(sessionIdRef.current);
       clearElapsedSeconds(sessionIdRef.current);
-      navigate({
-        to: "/tests/$testId/result",
-        params: { testId },
-        search: { sessionId: sessionIdRef.current },
-      });
+
+      // Show celebration overlay before navigating
+      const correctCount = Array.isArray(results)
+        ? results.filter((r: { isCorrect?: boolean }) => r.isCorrect).length
+        : 0;
+      const total = questions.length;
+      const isPerfect = total > 0 && correctCount === total;
+      showCelebration(isPerfect);
+      const delay = isPerfect ? 2000 : 1500;
+      celebrationTimerRef.current = setTimeout(() => {
+        setCelebrationVisible(false);
+        navigate({
+          to: "/tests/$testId/result",
+          params: { testId },
+          search: { sessionId: sessionIdRef.current },
+        });
+      }, delay);
     },
     onError: () => toast.error("Failed to submit test. Please try again."),
   });
@@ -593,6 +541,7 @@ export function TakeTestPage() {
         // Clear any prior timer
         if (autoAdvanceTimerRef.current)
           clearTimeout(autoAdvanceTimerRef.current);
+        // 1.5s delay so user sees the Correct flash
         autoAdvanceTimerRef.current = setTimeout(() => {
           autoAdvanceTimerRef.current = null;
           if (currentIdx < questions.length - 1) {
@@ -600,8 +549,9 @@ export function TakeTestPage() {
           } else {
             submitMutation.mutate();
           }
-        }, 500);
+        }, 1500);
       }
+      // For incorrect answers, do NOT auto-advance — user must click Continue
       return;
     }
 
@@ -622,64 +572,85 @@ export function TakeTestPage() {
     return () => {
       if (autoAdvanceTimerRef.current)
         clearTimeout(autoAdvanceTimerRef.current);
+      if (celebrationTimerRef.current)
+        clearTimeout(celebrationTimerRef.current);
     };
   }, []);
 
-  // Play audio whenever the current question changes
-  // Track whether the current question has audio (for Play Again button visibility)
-  const [currentQuestionHasAudio, setCurrentQuestionHasAudio] = useState(false);
-  const currentAudioSrcRef = useRef<string | null>(null);
-
+  // Global keyboard shortcuts for test-taking
+  // biome-ignore lint/correctness/useExhaustiveDependencies: stable refs, intentional
   useEffect(() => {
-    const aq = questions[currentIdx];
-    // Clean up previous audio src before setting new one
-    if (currentAudioSrcRef.current) {
-      URL.revokeObjectURL(currentAudioSrcRef.current);
-      currentAudioSrcRef.current = null;
-    }
-    if (!aq) {
-      setCurrentQuestionHasAudio(false);
-      audioRef.current = null;
-      return;
-    }
-
-    let audioSrc: string | null = null;
-    let isBlobUrl = false;
-
-    if (aq.audioBlob && aq.audioBlob.byteLength > 0) {
-      // audioBlob is a Uint8Array — create a Blob from it
-      const blob = new Blob([aq.audioBlob as Uint8Array<ArrayBuffer>], {
-        type: "audio/mpeg",
-      });
-      audioSrc = URL.createObjectURL(blob);
-      isBlobUrl = true;
-      currentAudioSrcRef.current = audioSrc;
-    } else if (aq.audioUrl && aq.audioUrl.trim().length > 0) {
-      audioSrc = aq.audioUrl.trim();
-    }
-
-    if (!audioSrc) {
-      setCurrentQuestionHasAudio(false);
-      audioRef.current = null;
-      return;
-    }
-
-    setCurrentQuestionHasAudio(true);
-    const el = new Audio(audioSrc);
-    el.volume = 1;
-    audioRef.current = el;
-    el.play().catch(() => {
-      /* autoplay blocked by browser — Play Again button is always shown so user can manually play */
-    });
-
-    return () => {
-      el.pause();
-      if (isBlobUrl && audioSrc) {
-        URL.revokeObjectURL(audioSrc);
-        currentAudioSrcRef.current = null;
+    function handleKeyDown(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === " " || e.key === "Enter") {
+        e.preventDefault();
+        if (currentQuestion && !submitMutation.isPending) {
+          const qId = String(currentQuestion.id);
+          const isChecked = checkedIds.has(qId);
+          const answer = getAnswer(currentQuestion);
+          const hasAnswer =
+            answer.selectedOptions.length > 0 ||
+            answer.textAnswer.trim().length > 0;
+          if (hasAnswer || isChecked) handleCheckOrNext();
+        }
+      } else if (e.key === "b" || e.key === "B") {
+        if (currentQuestion) handleToggleBookmark(String(currentQuestion.id));
+      } else if (e.key === "r" || e.key === "R") {
+        if (audioElementRef.current) {
+          audioElementRef.current.currentTime = 0;
+          audioElementRef.current.play().catch(() => {});
+        }
       }
-    };
-  }, [currentIdx, questions[currentIdx]]);
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    currentQuestion,
+    submitMutation.isPending,
+    checkedIds,
+    shuffledOptionsMap,
+  ]);
+
+  // ── Celebration overlay ──────────────────────────────────────────────────────────────
+  const [celebrationVisible, setCelebrationVisible] = useState(false);
+  const [celebrationPerfect, setCelebrationPerfect] = useState(false);
+  const celebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+
+  function showCelebration(perfect: boolean) {
+    setCelebrationPerfect(perfect);
+    setCelebrationVisible(true);
+  }
+
+  // ── Keyboard shortcuts hint ──────────────────────────────────────────────────
+  const [keyboardHintSeen, setKeyboardHintSeen] = useState(() => {
+    try {
+      return !!localStorage.getItem("keyboardHintSeen");
+    } catch {
+      return false;
+    }
+  });
+  const [keyboardHintVisible, setKeyboardHintVisible] = useState(false);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only run when questions first load
+  useEffect(() => {
+    if (!keyboardHintSeen && questions.length > 0) {
+      setKeyboardHintVisible(true);
+    }
+  }, [questions.length]);
+
+  function dismissKeyboardHint() {
+    setKeyboardHintVisible(false);
+    setKeyboardHintSeen(true);
+    try {
+      localStorage.setItem("keyboardHintSeen", "1");
+    } catch {
+      /* ignore */
+    }
+  }
 
   if (isLoading || (filteredQuestions.length > 0 && questions.length === 0)) {
     return (
@@ -825,7 +796,92 @@ export function TakeTestPage() {
       className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
       data-ocid="test.page"
     >
-      {/* Top bar: back link + font size + End Test button */}
+      {/* Celebration overlay */}
+      {celebrationVisible && (
+        <div
+          className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-background/80 backdrop-blur-sm pointer-events-none"
+          data-ocid="test.celebration_overlay"
+        >
+          <div className="celebration-confetti" aria-hidden="true">
+            {Array.from({ length: 30 }, (_, i) => `confetti-${i}`).map(
+              (id, i) => (
+                <div
+                  key={id}
+                  className="confetti-particle"
+                  style={{
+                    left: `${Math.random() * 100}%`,
+                    animationDelay: `${Math.random() * 1}s`,
+                    background: [
+                      "#7c3aed",
+                      "#10b981",
+                      "#f59e0b",
+                      "#ef4444",
+                      "#3b82f6",
+                      "#ec4899",
+                    ][i % 6],
+                  }}
+                />
+              ),
+            )}
+          </div>
+          <div className="text-center animate-slide-in-up">
+            <div className="text-6xl mb-4">
+              {celebrationPerfect ? "🏆" : "✅"}
+            </div>
+            <h2 className="font-display text-3xl font-bold text-foreground mb-2">
+              {celebrationPerfect ? "🏆 Perfect Score!" : "Test Complete!"}
+            </h2>
+            <p className="text-muted-foreground">
+              {celebrationPerfect
+                ? "Outstanding! Every answer was correct!"
+                : "Great work — reviewing your results…"}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Keyboard shortcuts hint */}
+      {keyboardHintVisible && (
+        <div
+          className="fixed bottom-6 right-6 z-50 max-w-xs bg-card border border-border rounded-xl shadow-elevated p-4"
+          data-ocid="test.keyboard_hint"
+        >
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <p className="text-sm font-semibold text-foreground">
+              Keyboard Shortcuts
+            </p>
+            <button
+              type="button"
+              onClick={dismissKeyboardHint}
+              aria-label="Dismiss"
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              ×
+            </button>
+          </div>
+          <div className="space-y-1.5 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2">
+              <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs font-mono">
+                Space
+              </kbd>
+              <span>Submit / Continue</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs font-mono">
+                B
+              </kbd>
+              <span>Toggle bookmark</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs font-mono">
+                R
+              </kbd>
+              <span>Replay audio</span>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Top bar: back link + font size A-/A+ + End Test button */}
       <div className="flex items-center justify-between gap-4 mb-4">
         <Link
           to="/tests"
@@ -836,36 +892,40 @@ export function TakeTestPage() {
           Back to Tests
         </Link>
         <div className="flex items-center gap-3">
-          {/* Font size slider */}
+          {/* Font size A-/A+ inline controls */}
           <div
-            className="flex items-center gap-2"
+            className="flex items-center gap-1"
             data-ocid="test.font_size_control"
           >
-            <span className="text-xs text-muted-foreground font-medium select-none whitespace-nowrap">
-              Text Size
+            <button
+              type="button"
+              aria-label="Decrease text size"
+              data-ocid="test.font_size_decrease"
+              onClick={() =>
+                handleFontSizeChange(Math.max(FONT_SIZE_MIN, fontSize - 1))
+              }
+              className="w-7 h-7 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors select-none text-xs font-bold disabled:opacity-40"
+              disabled={fontSize <= FONT_SIZE_MIN}
+            >
+              A<span style={{ fontSize: "8px", verticalAlign: "sub" }}>-</span>
+            </button>
+            <span className="text-xs text-muted-foreground tabular-nums w-7 text-center select-none">
+              {fontSize}
             </span>
-            <input
-              type="range"
-              min={FONT_SIZE_MIN}
-              max={FONT_SIZE_MAX}
-              step={1}
-              value={fontSize}
-              onChange={(e) => handleFontSizeChange(Number(e.target.value))}
-              aria-label={`Text size: ${fontSize}px`}
-              data-ocid="test.font_size_slider"
-              className="w-28 sm:w-36 accent-primary cursor-pointer"
-            />
-            <span className="text-xs text-muted-foreground tabular-nums w-8 text-right select-none">
-              {fontSize}px
-            </span>
+            <button
+              type="button"
+              aria-label="Increase text size"
+              data-ocid="test.font_size_increase"
+              onClick={() =>
+                handleFontSizeChange(Math.min(FONT_SIZE_MAX, fontSize + 1))
+              }
+              className="w-7 h-7 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors select-none font-bold disabled:opacity-40"
+              disabled={fontSize >= FONT_SIZE_MAX}
+            >
+              <span className="text-sm">A</span>
+              <span style={{ fontSize: "8px", verticalAlign: "super" }}>+</span>
+            </button>
           </div>
-          <Link
-            to="/tests"
-            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-            data-ocid="test.all_tests_link"
-          >
-            All Tests
-          </Link>
           <Button
             variant="outline"
             size="sm"
@@ -981,25 +1041,23 @@ export function TakeTestPage() {
               />
             </div>
           )}
-          {currentQuestionHasAudio && (
-            <div className="flex items-center gap-2 mt-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="gap-1.5 text-xs"
-                onClick={() => {
-                  if (audioRef.current) {
-                    audioRef.current.currentTime = 0;
-                    audioRef.current.play().catch(() => {});
-                  }
-                }}
-                data-ocid="test.play_again_button"
-                aria-label="Play audio again"
+          {currentQuestion?.audioUrl && (
+            <div
+              key={`${String(currentQuestion.id)}-${sessionIdRef.current}`}
+              className="mt-3"
+              data-ocid="test.audio_card"
+            >
+              <audio
+                key={`${String(currentQuestion.id)}-${sessionIdRef.current}`}
+                ref={audioElementRef}
+                src={currentQuestion.audioUrl}
+                autoPlay
+                controls
+                className="w-full rounded-lg"
+                data-testid="audio-play-again-button"
               >
-                <Volume2 className="w-3.5 h-3.5" />
-                Play Again
-              </Button>
+                <track kind="captions" />
+              </audio>
             </div>
           )}
         </CardHeader>
@@ -1017,56 +1075,130 @@ export function TakeTestPage() {
             onToggleBookmark={() => handleToggleBookmark(qId)}
           />
 
-          {/* Correct answer display — immediately shown when answer is incorrect */}
+          {/* Answer feedback banners — shown when checked */}
           {isChecked && !correct && (
-            <div
-              className="mt-4 flex items-start gap-2.5 px-3 py-2.5 rounded-lg bg-accent/10 border border-accent/30"
-              data-ocid="test.correct_answer_display"
-            >
-              <CheckCircle2 className="w-4 h-4 shrink-0 text-accent mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide block mb-0.5">
-                  Correct answer
-                </span>
-                {(q.questionType === QuestionType.mcSingle ||
-                  q.questionType === QuestionType.mcMulti) && (
-                  <div className="space-y-1">
-                    {q.correctAnswers.map((idx) => {
-                      // Always use the ORIGINAL (un-shuffled) options for correct answer display
-                      const origOpt = q.options[Number(idx)];
-                      return origOpt ? (
-                        <RichTextDisplay
-                          key={String(idx)}
-                          html={origOpt}
-                          className="font-medium text-accent"
-                        />
-                      ) : null;
-                    })}
-                  </div>
-                )}
-                {q.questionType === QuestionType.textInput && (
-                  <RichTextDisplay
-                    html={q.correctText}
-                    className="font-medium text-accent"
-                  />
-                )}
-                {q.questionType === QuestionType.dragOrder && (
-                  <div className="flex flex-wrap gap-1">
-                    {q.correctOrder.map((idx, pos) => (
-                      <span
-                        key={`order-${pos}-${String(idx)}`}
-                        className="text-xs bg-accent/15 text-accent px-2 py-0.5 rounded inline-flex items-center gap-1"
-                      >
-                        <span className="font-bold">{pos + 1}.</span>
-                        <RichTextDisplay
-                          html={q.options[Number(idx)] ?? ""}
-                          className="inline"
-                        />
-                      </span>
-                    ))}
-                  </div>
-                )}
+            <div className="mt-4 space-y-2" data-ocid="test.answer_banners">
+              {/* User's wrong answer — red banner */}
+              <div
+                className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg bg-destructive/10 border border-destructive/30"
+                data-ocid="test.your_answer_display"
+              >
+                <XCircle className="w-4 h-4 shrink-0 text-destructive mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <span className="text-xs font-semibold text-destructive uppercase tracking-wide block mb-0.5">
+                    Your Answer
+                  </span>
+                  {(q.questionType === QuestionType.mcSingle ||
+                    q.questionType === QuestionType.mcMulti) && (
+                    <div className="space-y-1">
+                      {answer.selectedOptions.length === 0 ? (
+                        <span className="text-sm text-destructive/70 italic">
+                          No answer selected
+                        </span>
+                      ) : (
+                        answer.selectedOptions.map((displayIdx) => {
+                          const origIdx = optMap
+                            ? optMap[displayIdx]
+                            : displayIdx;
+                          const opt = q.options[origIdx];
+                          return opt ? (
+                            <RichTextDisplay
+                              key={displayIdx}
+                              html={opt}
+                              className="font-medium text-destructive"
+                            />
+                          ) : null;
+                        })
+                      )}
+                    </div>
+                  )}
+                  {q.questionType === QuestionType.textInput && (
+                    <RichTextDisplay
+                      html={answer.textAnswer || "<em>No answer entered</em>"}
+                      className="font-medium text-destructive"
+                    />
+                  )}
+                  {q.questionType === QuestionType.dragOrder && (
+                    <div className="flex flex-wrap gap-1">
+                      {answer.dragOrder.map((idx, pos) => (
+                        <span
+                          key={`your-order-${pos}-${idx}`}
+                          className="text-xs bg-destructive/15 text-destructive px-2 py-0.5 rounded inline-flex items-center gap-1"
+                        >
+                          <span className="font-bold">{pos + 1}.</span>
+                          <RichTextDisplay
+                            html={q.options[idx] ?? ""}
+                            className="inline"
+                          />
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
+
+              {/* Correct answer — green banner */}
+              <div
+                className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg bg-accent/10 border border-accent/30"
+                data-ocid="test.correct_answer_display"
+              >
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-accent mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <span className="text-xs font-semibold text-accent uppercase tracking-wide block mb-0.5">
+                    Correct Answer
+                  </span>
+                  {(q.questionType === QuestionType.mcSingle ||
+                    q.questionType === QuestionType.mcMulti) && (
+                    <div className="space-y-1">
+                      {q.correctAnswers.map((idx) => {
+                        const origOpt = q.options[Number(idx)];
+                        return origOpt ? (
+                          <RichTextDisplay
+                            key={String(idx)}
+                            html={origOpt}
+                            className="font-medium text-accent"
+                          />
+                        ) : null;
+                      })}
+                    </div>
+                  )}
+                  {q.questionType === QuestionType.textInput && (
+                    <RichTextDisplay
+                      html={q.correctText}
+                      className="font-medium text-accent"
+                    />
+                  )}
+                  {q.questionType === QuestionType.dragOrder && (
+                    <div className="flex flex-wrap gap-1">
+                      {q.correctOrder.map((idx, pos) => (
+                        <span
+                          key={`order-${pos}-${String(idx)}`}
+                          className="text-xs bg-accent/15 text-accent px-2 py-0.5 rounded inline-flex items-center gap-1"
+                        >
+                          <span className="font-bold">{pos + 1}.</span>
+                          <RichTextDisplay
+                            html={q.options[Number(idx)] ?? ""}
+                            className="inline"
+                          />
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Correct flash — shown briefly on correct answer */}
+          {isChecked && correct && (
+            <div
+              className="mt-4 flex items-center gap-2 px-3 py-2.5 rounded-lg bg-accent/10 border border-accent/30"
+              data-ocid="test.correct_flash"
+            >
+              <CheckCircle2 className="w-4 h-4 text-accent shrink-0" />
+              <span className="text-sm font-semibold text-accent">
+                Correct! ✓
+              </span>
             </div>
           )}
 
@@ -1136,7 +1268,9 @@ export function TakeTestPage() {
         <Button
           onClick={handleCheckOrNext}
           disabled={
-            submitMutation.isPending || (!hasAnswerEntered && !isChecked)
+            submitMutation.isPending ||
+            (!hasAnswerEntered && !isChecked) ||
+            (isChecked && correct === true)
           }
           className="gap-2"
           data-ocid={
@@ -1150,14 +1284,16 @@ export function TakeTestPage() {
           {submitMutation.isPending ? (
             <span data-ocid="test.loading_state">Submitting…</span>
           ) : isChecked ? (
-            correct ? null : isLast ? (
+            correct ? (
+              <span className="text-accent">Auto-advancing…</span>
+            ) : isLast ? (
               <>
                 <CheckCircle2 className="w-4 h-4" />
                 Submit Test
               </>
             ) : (
               <>
-                Next
+                Continue
                 <ArrowRight className="w-4 h-4" />
               </>
             )

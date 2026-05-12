@@ -70,13 +70,19 @@ export function createIcpBackendService(
       actor.getTestProgress(username, testId, sessionId),
     saveTestProgress: (username, testId, sessionId, answers) =>
       actor.saveTestProgress(username, testId, sessionId, answers),
-    submitTestAnswers: (username, testId, sessionId, submissions) =>
+    submitTestAnswers: (
+      username,
+      testId,
+      sessionId,
+      submissions,
+      timeSpentSeconds,
+    ) =>
       actor.submitTestAnswers(
         username,
         testId,
         sessionId,
         submissions,
-        BigInt(0),
+        timeSpentSeconds,
       ),
     getTestResult: (username, testId) => actor.getTestResult(username, testId),
     getTestResultBySession: (username, testId, sessionId) =>
@@ -94,6 +100,19 @@ export function createIcpBackendService(
       actor.adminActivateUser(adminUsername, targetUsername),
     adminDeactivateUser: (adminUsername, targetUsername) =>
       actor.adminDeactivateUser(adminUsername, targetUsername),
+    adminDeleteUser: async (adminUsername, targetUsername) => {
+      // Cast: the backend exposes adminDeleteUser but bindgen may not have
+      // reflected it yet. Safe to call — method exists on the canister.
+      const a = actor as typeof actor & {
+        adminDeleteUser: (
+          caller: string,
+          target: string,
+        ) => Promise<
+          { __kind__: "ok"; ok: null } | { __kind__: "err"; err: string }
+        >;
+      };
+      return a.adminDeleteUser(adminUsername, targetUsername);
+    },
     adminGetUserProgress: async (adminUsername, targetUsername, testId) => {
       const result = await actor.adminGetUserProgress(
         adminUsername,
@@ -123,8 +142,8 @@ export function createIcpBackendService(
       );
       return result ?? null;
     },
-    downloadAudio: (username, questionId, audioUrl) =>
-      actor.downloadAudio(username, questionId, audioUrl),
-    getAudioBlob: (questionId) => actor.getAudioBlob(questionId),
+    // ── Data Sync ─────────────────────────────────────────────────────────────
+    getDataManifest: () => actor.getDataManifest(),
+    getAllTestData: () => actor.getAllTestData(),
   };
 }

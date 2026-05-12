@@ -39,6 +39,7 @@ import {
 } from "../../components/QuestionTypeIcon";
 import { RichTextDisplay } from "../../components/RichTextDisplay";
 import { SectionDeleteDialog } from "../../components/SectionDeleteDialog";
+import { useDataSyncContext } from "../../context/DataSyncContext";
 import { useAuth } from "../../hooks/useAuth";
 import { useBackend } from "../../hooks/useBackend";
 import type { Question, Section, Test } from "../../types";
@@ -58,6 +59,12 @@ export function AdminTestDetailPage() {
   const backend = useBackend();
   const queryClient = useQueryClient();
   const username = session?.username ?? "";
+  const {
+    getTest: getCachedTest,
+    getQuestions: getCachedQuestions,
+    getSections: getCachedSections,
+    refreshData,
+  } = useDataSyncContext();
 
   // Question state
   const [questionModal, setQuestionModal] = useState<"create" | "edit" | null>(
@@ -83,36 +90,45 @@ export function AdminTestDetailPage() {
 
   const testIdBig = BigInt(testId);
 
-  const { data: test } = useQuery<Test | null>({
-    queryKey: ["test", testId],
-    queryFn: async () => {
-      if (!backend) return null;
-      return backend.getTest(testIdBig);
-    },
-    enabled: !!backend,
-  });
+  const cachedTest = getCachedTest(testId);
+  const test = cachedTest
+    ? {
+        id: BigInt(cachedTest.id),
+        name: cachedTest.name,
+        description: cachedTest.description,
+        updatedAt: BigInt(cachedTest.updatedAt),
+        createdAt: BigInt(0),
+      }
+    : undefined;
 
-  const { data: questions = [], isLoading: questionsLoading } = useQuery<
-    Question[]
-  >({
-    queryKey: ["questions", testId],
-    queryFn: async () => {
-      if (!backend) return [];
-      return backend.listQuestionsForTest(testIdBig);
-    },
-    enabled: !!backend,
-  });
+  const cachedQuestions = getCachedQuestions(testId);
+  const questions: Question[] = cachedQuestions.map((cq) => ({
+    id: BigInt(cq.id),
+    testId: BigInt(cq.testId),
+    orderIndex: BigInt(cq.orderIndex),
+    text: cq.text,
+    questionType: cq.questionType as Question["questionType"],
+    options: cq.options,
+    correctAnswers: cq.correctAnswers.map(BigInt),
+    correctText: cq.correctText,
+    correctOrder: cq.correctOrder.map(BigInt),
+    sectionId: cq.sectionId != null ? BigInt(cq.sectionId) : undefined,
+    questionUpdatedAt: BigInt(cq.questionUpdatedAt),
+    explanation: cq.explanation ?? undefined,
+    audioUrl: cq.audioUrl ?? undefined,
+  }));
+  const questionsLoading = false;
 
-  const { data: sections = [], isLoading: sectionsLoading } = useQuery<
-    Section[]
-  >({
-    queryKey: ["sections", testId],
-    queryFn: async () => {
-      if (!backend) return [];
-      return backend.listSectionsForTest(testIdBig);
-    },
-    enabled: !!backend,
-  });
+  const cachedSections = getCachedSections(testId);
+  const sections: Section[] = cachedSections.map((cs) => ({
+    id: BigInt(cs.id),
+    testId: BigInt(cs.testId),
+    name: cs.name,
+    description: cs.description,
+    updatedAt: BigInt(cs.updatedAt),
+    createdAt: BigInt(0),
+  }));
+  const sectionsLoading = false;
 
   // ── Section mutations ────────────────────────────────────────────────────────
 
@@ -126,6 +142,7 @@ export function AdminTestDetailPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sections", testId] });
+      refreshData();
       toast.success("Section created");
       setSectionModal(null);
       setSectionForm(defaultSectionForm());
@@ -143,6 +160,7 @@ export function AdminTestDetailPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sections", testId] });
+      refreshData();
       toast.success("Section updated");
       setSectionModal(null);
       setEditSection(null);
@@ -159,6 +177,7 @@ export function AdminTestDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sections", testId] });
       queryClient.invalidateQueries({ queryKey: ["questions", testId] });
+      refreshData();
       toast.success("Section deleted");
       setDeleteSectionTarget(null);
     },
@@ -192,6 +211,7 @@ export function AdminTestDetailPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["questions", testId] });
+      refreshData();
       toast.success("Question added");
       setQuestionModal(null);
       setUploadProgress(0);
@@ -220,6 +240,7 @@ export function AdminTestDetailPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["questions", testId] });
+      refreshData();
       toast.success("Question updated");
       setQuestionModal(null);
       setEditQuestion(null);
@@ -238,6 +259,7 @@ export function AdminTestDetailPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["questions", testId] });
+      refreshData();
       toast.success("Question deleted");
       setDeleteQuestion(null);
     },
@@ -270,10 +292,6 @@ export function AdminTestDetailPage() {
       sectionId: q.sectionId != null ? Number(q.sectionId) : null,
       explanation: q.explanation ?? "",
       audioUrl: (q as Question & { audioUrl?: string }).audioUrl ?? "",
-      audioStatus: (q as Question & { audioUrl?: string }).audioUrl
-        ? "ready"
-        : "idle",
-      audioErrorMsg: "",
     });
     setEditQuestion(q);
     setQuestionModal("edit");
@@ -298,31 +316,6 @@ export function AdminTestDetailPage() {
     setSectionForm({ name: s.name, description: s.description });
     setEditSection(s);
     setSectionModal("edit");
-  }
-
-  async function handleDownloadAudio(
-    url: string,
-  ): Promise<{ success: boolean; error?: string }> {
-    if (!backend) return { success: false, error: "Not connected" };
-
-    // When creating a new question, there is no question ID yet.
-    // The audio URL will be downloaded and stored when the question is saved.
-    // Just mark it ready so the user can proceed without a confusing error.
-    if (!editQuestion) {
-      return { success: true };
-    }
-
-    try {
-      const result = await backend.downloadAudio(
-        username,
-        editQuestion.id,
-        url,
-      );
-      if (result.__kind__ === "ok") return { success: true };
-      return { success: false, error: result.err };
-    } catch (e) {
-      return { success: false, error: String(e) };
-    }
   }
 
   function getQuestionCountForSection(sId: bigint): number {
@@ -365,21 +358,43 @@ export function AdminTestDetailPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-2 mb-6">
+      {/* Breadcrumb — shows Tests › Test Name [ › Section Name ] */}
+      <nav
+        className="flex items-center gap-1.5 mb-6 text-sm"
+        aria-label="Breadcrumb"
+        data-ocid="admin.detail.breadcrumb"
+      >
         <Link
           to="/admin"
-          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-fast"
-          data-ocid="admin.detail.back.link"
+          className="text-muted-foreground hover:text-foreground transition-fast"
+          data-ocid="admin.detail.breadcrumb.tests_link"
         >
-          <ArrowLeft className="w-4 h-4" />
-          My Tests
+          Tests
         </Link>
-        <span className="text-muted-foreground">/</span>
-        <span className="text-sm font-medium text-foreground">
-          {test?.name ?? "Loading\u2026"}
-        </span>
-      </div>
+        <span className="text-muted-foreground">&rsaquo;</span>
+        {selectedSection ? (
+          <>
+            <button
+              type="button"
+              className="text-muted-foreground hover:text-foreground transition-fast hidden sm:inline"
+              onClick={() => setSelectedSection(null)}
+              data-ocid="admin.detail.breadcrumb.test_link"
+            >
+              {test?.name ?? "Loading…"}
+            </button>
+            <span className="text-muted-foreground hidden sm:inline">
+              &rsaquo;
+            </span>
+            <span className="font-medium text-foreground">
+              {selectedSection.name}
+            </span>
+          </>
+        ) : (
+          <span className="font-medium text-foreground">
+            {test?.name ?? "Loading…"}
+          </span>
+        )}
+      </nav>
 
       {/* Page Header */}
       <div className="flex items-start justify-between mb-8">
@@ -832,7 +847,6 @@ export function AdminTestDetailPage() {
             onChange={setForm}
             uploadProgress={uploadProgress}
             sections={sectionOptions}
-            onDownloadAudio={handleDownloadAudio}
           />
           <DialogFooter className="mt-4">
             <Button
@@ -854,8 +868,7 @@ export function AdminTestDetailPage() {
               disabled={
                 !form.text.trim() ||
                 createMutation.isPending ||
-                updateMutation.isPending ||
-                form.audioStatus === "downloading"
+                updateMutation.isPending
               }
               data-ocid="admin.question.submit_button"
             >

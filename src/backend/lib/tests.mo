@@ -1,6 +1,9 @@
 import Map "mo:core/Map";
 import Time "mo:core/Time";
 import Types "../types/tests";
+import Int "mo:core/Int";
+import Nat "mo:core/Nat";
+import SectionTypes "../types/sections";
 
 /// Tests domain logic: CRUD for Test and Question entities.
 /// Stateless functions that receive explicit Map state parameters.
@@ -90,8 +93,6 @@ module {
       orderIndex = questionCount;
       questionUpdatedAt = Time.now();
       audioUrl = input.audioUrl;
-      audioBlob = null;
-      audioDownloadStatus = null;
     };
     questions.add(nextId, question);
     question;
@@ -117,9 +118,6 @@ module {
           sectionId = input.sectionId;
           explanation = input.explanation;
           audioUrl = input.audioUrl;
-          // Preserve audio blob data and download status — never drop stored audio on text-only edits
-          audioBlob = existing.audioBlob;
-          audioDownloadStatus = existing.audioDownloadStatus;
         };
         questions.add(questionId, updated);
         ?updated;
@@ -159,6 +157,54 @@ module {
     questionId : Nat,
   ) : ?Types.Question {
     questions.get(questionId);
+  };
+
+  /// Compute a DataManifest from all current data.
+  /// Finds the maximum updatedAt across all tests, questions, and sections.
+  public func buildDataManifest(
+    tests : Map.Map<Nat, Types.Test>,
+    questions : Map.Map<Nat, Types.Question>,
+    sections : Map.Map<Nat, SectionTypes.Section>,
+  ) : Types.DataManifest {
+    var maxTs : Int = 0;
+    for (t in tests.values()) {
+      if (t.updatedAt > maxTs) { maxTs := t.updatedAt };
+    };
+    for (q in questions.values()) {
+      if (q.questionUpdatedAt > maxTs) { maxTs := q.questionUpdatedAt };
+    };
+    for (s in sections.values()) {
+      if (s.updatedAt > maxTs) { maxTs := s.updatedAt };
+    };
+    let testCount = tests.size();
+    let questionCount = questions.size();
+    let sectionCount = sections.size();
+    let globalUpdatedAt = maxTs.toText();
+    let checksum = testCount.toText() # "_" # questionCount.toText() # "_" # sectionCount.toText() # "_" # globalUpdatedAt;
+    { globalUpdatedAt; testCount; questionCount; sectionCount; checksum };
+  };
+
+  /// Build the full bulk response: all tests with nested questions and sections.
+  public func buildAllTestData(
+    tests : Map.Map<Nat, Types.Test>,
+    questions : Map.Map<Nat, Types.Question>,
+    sections : Map.Map<Nat, SectionTypes.Section>,
+  ) : Types.AllTestData {
+    let manifest = buildDataManifest(tests, questions, sections);
+    let allTests = tests.values().map(
+      func(t : Types.Test) : Types.TestFullData {
+        let qs = listQuestionsForTest(questions, t.id);
+        let rawSections = sections.values().filter(
+          func(s : SectionTypes.Section) : Bool { s.testId == t.id }
+        ).map(
+          func(s : SectionTypes.Section) : Types.SectionData {
+            { id = s.id; testId = s.testId; name = s.name; description = s.description; createdAt = s.createdAt; updatedAt = s.updatedAt }
+          }
+        ).toArray();
+        { id = t.id; name = t.name; description = t.description; createdAt = t.createdAt; updatedAt = t.updatedAt; questions = qs; sections = rawSections };
+      }
+    ).toArray();
+    { manifest; tests = allTests };
   };
 
   public func countQuestionsForTest(

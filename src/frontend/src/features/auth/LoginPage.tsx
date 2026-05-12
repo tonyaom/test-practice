@@ -35,10 +35,24 @@ export function LoginPage() {
   const backend = useBackend();
 
   // Step 1 – credentials
-  const [username, setUsername] = useState("");
+  const REMEMBER_KEY = "login_remember_username";
+  const [username, setUsername] = useState(() => {
+    try {
+      return localStorage.getItem(REMEMBER_KEY) ?? "";
+    } catch {
+      return "";
+    }
+  });
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [rememberMe, setRememberMe] = useState(() => {
+    try {
+      return !!localStorage.getItem(REMEMBER_KEY);
+    } catch {
+      return false;
+    }
+  });
 
   // Step 2 – TOTP
   const [step, setStep] = useState<LoginStep>("credentials");
@@ -64,6 +78,19 @@ export function LoginPage() {
     }
     setLoading(true);
     try {
+      if (rememberMe) {
+        try {
+          localStorage.setItem(REMEMBER_KEY, username);
+        } catch {
+          /* ignore */
+        }
+      } else {
+        try {
+          localStorage.removeItem(REMEMBER_KEY);
+        } catch {
+          /* ignore */
+        }
+      }
       const result = await backend.login(username, password);
       if (result.__kind__ === "err") {
         setError(result.err);
@@ -137,7 +164,7 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center bg-background p-4">
+    <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4 login-gradient">
       <div className="w-full max-w-md animate-slide-in-up">
         {/* Brand mark */}
         <div className="flex flex-col items-center mb-8">
@@ -148,8 +175,39 @@ export function LoginPage() {
             PrepStream
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Practice smarter, score higher
+            Practice smarter. Master faster.
           </p>
+          {/* Step indicator */}
+          <div
+            className="flex items-center gap-2 mt-3"
+            data-ocid="login.step_indicator"
+          >
+            <div
+              className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${
+                step === "credentials"
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground"
+              }`}
+            >
+              <span className="w-4 h-4 rounded-full flex items-center justify-center text-xs">
+                1
+              </span>
+              Credentials
+            </div>
+            <div className="w-6 h-px bg-border" />
+            <div
+              className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${
+                step === "totp"
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground"
+              }`}
+            >
+              <span className="w-4 h-4 rounded-full flex items-center justify-center text-xs">
+                2
+              </span>
+              Verification
+            </div>
+          </div>
         </div>
 
         {step === "credentials" ? (
@@ -187,6 +245,24 @@ export function LoginPage() {
                     autoComplete="current-password"
                     data-ocid="login.password.input"
                   />
+                </div>
+
+                {/* Remember me */}
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="remember-me"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="w-4 h-4 rounded border-input accent-primary"
+                    data-ocid="login.remember_me.checkbox"
+                  />
+                  <label
+                    htmlFor="remember-me"
+                    className="text-sm text-muted-foreground cursor-pointer select-none"
+                  >
+                    Remember my username
+                  </label>
                 </div>
 
                 {error && (

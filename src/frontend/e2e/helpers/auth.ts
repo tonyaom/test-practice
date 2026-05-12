@@ -1,7 +1,9 @@
 import type { Page } from '@playwright/test';
 
-export const ADMIN_USERNAME = 'adbc';
-export const ADMIN_PASSWORD = 'abcd';
+import { ADMIN_PASSWORD as _ADMIN_PASSWORD, ADMIN_USERNAME as _ADMIN_USERNAME } from '../../src/constants/auth.constants';
+
+export const ADMIN_USERNAME = _ADMIN_USERNAME;
+export const ADMIN_PASSWORD = _ADMIN_PASSWORD;
 
 /**
  * Fill in the login form and submit.

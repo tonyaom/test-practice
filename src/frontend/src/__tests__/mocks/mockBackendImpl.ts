@@ -1,3 +1,4 @@
+import { ADMIN_PASSWORD, ADMIN_USERNAME } from "../../constants/auth.constants";
 /**
  * Test-only mock backend implementation.
  * Copied from src/mocks/backend.ts but imports from local backendStub
@@ -146,17 +147,20 @@ const sampleResult: TestResult = {
 
 /** Roles known to the mock backend */
 const knownRoles: Record<string, UserRole> = {
-  abcd: "admin" as UserRole,
+  [ADMIN_USERNAME]: "admin" as UserRole,
   admin2fa: "user" as UserRole,
   sarah: "user" as UserRole,
 };
 
 /** Active status for users */
 const userActiveStatus: Record<string, boolean> = {
-  abcd: true,
+  [ADMIN_USERNAME]: true,
   admin2fa: true,
   sarah: true,
 };
+
+/** Passwords for dynamically registered users (seeded users are hard-coded in login) */
+const registeredPasswords: Record<string, string> = {};
 
 /** Mastery data per user+question */
 const masteryData: Record<
@@ -166,7 +170,7 @@ const masteryData: Record<
 
 const sampleUsers: AdminUserInfo[] = [
   {
-    username: "abcd",
+    username: ADMIN_USERNAME,
     displayName: "Admin User",
     role: "admin",
     isActive: true,
@@ -205,34 +209,66 @@ function assertAdmin(username: string): void {
 
 export const mockBackend: backendInterface = {
   login: async (username: string, password: string): Promise<LoginResult> => {
+    // Check deactivated special-case first
     if (username === "deactivated" && password === "deactivated") {
       return { __kind__: "accountDeactivated", accountDeactivated: null };
     }
-    if (username === "abcd" && password === "abcd") {
+    // Check if account is deactivated
+    if (userActiveStatus[username] === false) {
+      return { __kind__: "accountDeactivated", accountDeactivated: null };
+    }
+    // Seeded admin
+    if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
       return {
         __kind__: "ok",
-        ok: { username: "abcd", role: "admin" as UserRole },
+        ok: { username: ADMIN_USERNAME, role: "admin" as UserRole },
       };
     }
+    // 2FA user
     if (username === "admin2fa" && password === "password") {
-      // Simulates a user with 2FA enabled
       return { __kind__: "requiresTOTP", requiresTOTP: null };
     }
+    // Seeded regular user
     if (username === "sarah" && password === "password") {
       return {
         __kind__: "ok",
         ok: { username: "sarah", role: "user" as UserRole },
       };
     }
+    // Dynamically registered users (registered via register() in this session)
+    if (registeredPasswords[username] !== undefined) {
+      if (registeredPasswords[username] === password) {
+        const role = knownRoles[username] ?? ("user" as UserRole);
+        return { __kind__: "ok", ok: { username, role } };
+      }
+      return { __kind__: "err", err: "Invalid username or password" };
+    }
     return { __kind__: "err", err: "Invalid username or password" };
   },
 
-  register: async (_username: string, _password: string) => {
+  register: async (username: string, password: string) => {
+    // Check for duplicate username (seeded or previously registered)
+    if (
+      knownRoles[username] !== undefined ||
+      registeredPasswords[username] !== undefined
+    ) {
+      return { __kind__: "err", err: "Username already taken" };
+    }
+    // Add the new user so they can immediately log in after registering
+    knownRoles[username] = "user" as UserRole;
+    userActiveStatus[username] = true;
+    registeredPasswords[username] = password;
+    sampleUsers.push({
+      username,
+      displayName: username,
+      role: "user",
+      isActive: true,
+    });
     return { __kind__: "ok", ok: null };
   },
 
   getUserRole: async (username: string) => {
-    if (username === "abcd") return "admin" as UserRole;
+    if (username === ADMIN_USERNAME) return "admin" as UserRole;
     return "user" as UserRole;
   },
 
@@ -289,22 +325,16 @@ export const mockBackend: backendInterface = {
     };
   },
 
-  // ADMIN-ONLY — preserves audioBlob and audioDownloadStatus from the existing record
+  // ADMIN-ONLY — preserves existing question data (audioUrl is part of input)
   updateQuestion: async (username: string, questionId: bigint, input) => {
     assertAdmin(username);
     const q = sampleQuestions.find((q) => q.id === questionId);
     if (!q) return null;
-    // Mirror the Motoko backend: audioBlob and audioDownloadStatus are preserved,
-    // only overwritten when downloadAudio is explicitly called.
+    // Mirror the Motoko backend: only update with the provided input fields.
     return {
       ...q,
       ...input,
       imageBlob: undefined,
-      audioBlob:
-        (q as Question & { audioBlob?: Uint8Array | null }).audioBlob ?? null,
-      audioDownloadStatus:
-        (q as Question & { audioDownloadStatus?: string | null })
-          .audioDownloadStatus ?? null,
     };
   },
 
@@ -363,7 +393,13 @@ export const mockBackend: backendInterface = {
 
   getTestResultBySession: async () => sampleResult,
 
-  submitTestAnswers: async () => sampleResult,
+  submitTestAnswers: async (
+    _username: string,
+    _testId: bigint,
+    _sessionId: string,
+    _submissions: unknown[],
+    _timeSpentSeconds?: bigint,
+  ) => sampleResult,
 
   getTestResult: async () => sampleResult,
 
@@ -399,10 +435,13 @@ export const mockBackend: backendInterface = {
   },
 
   disable2FA: async (_username: string, password: string, code: string) => {
-    if (password !== "abcd" || code === "000000") {
+    if (password !== ADMIN_PASSWORD || code === "000000") {
       return {
         __kind__: "err" as const,
-        err: password !== "abcd" ? "Invalid password" : "Invalid TOTP code",
+        err:
+          password !== ADMIN_PASSWORD
+            ? "Invalid password"
+            : "Invalid TOTP code",
       };
     }
     return { __kind__: "ok" as const, ok: null };
@@ -490,6 +529,26 @@ export const mockBackend: backendInterface = {
     return true;
   },
 
+  adminDeleteUser: async (
+    callerUsername: string,
+    targetUsername: string,
+  ): Promise<
+    { __kind__: "ok"; ok: null } | { __kind__: "err"; err: string }
+  > => {
+    assertAdmin(callerUsername);
+    if (targetUsername === ADMIN_USERNAME) {
+      return { __kind__: "err", err: "Cannot delete the seeded admin account" };
+    }
+    if (callerUsername === targetUsername) {
+      return { __kind__: "err", err: "Cannot delete your own account" };
+    }
+    const idx = sampleUsers.findIndex((u) => u.username === targetUsername);
+    if (idx !== -1) sampleUsers.splice(idx, 1);
+    delete knownRoles[targetUsername];
+    delete userActiveStatus[targetUsername];
+    return { __kind__: "ok", ok: null };
+  },
+
   adminGetUserProgress: async (
     callerUsername: string,
     targetUsername: string,
@@ -539,38 +598,6 @@ export const mockBackend: backendInterface = {
       };
     }
     return true;
-  },
-
-  // Audio
-  downloadAudio: async (
-    username: string,
-    _questionId: bigint,
-    audioUrl: string,
-  ): Promise<
-    { __kind__: "ok"; ok: null } | { __kind__: "err"; err: string }
-  > => {
-    assertAdmin(username);
-    if (!audioUrl || audioUrl.trim() === "") {
-      return {
-        __kind__: "err",
-        err: "Download failed: file too large or URL not accessible. Max file size is 2MB.",
-      };
-    }
-    if (audioUrl.startsWith("invalid://") || audioUrl === "bad-url") {
-      return {
-        __kind__: "err",
-        err: "Download failed: file too large or URL not accessible. Max file size is 2MB.",
-      };
-    }
-    return { __kind__: "ok", ok: null };
-  },
-
-  getAudioBlob: async (questionId: bigint): Promise<Uint8Array | null> => {
-    // Return a small fake audio buffer for known question IDs
-    if (questionId === BigInt(1)) {
-      return new Uint8Array([0x49, 0x44, 0x33]); // fake MP3 ID3 header
-    }
-    return null;
   },
 
   // Admin: Dashboard Stats

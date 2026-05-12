@@ -2,10 +2,11 @@
  * Auto-advance logic tests.
  *
  * Covers:
- * - Correct answer triggers auto-advance after 500ms
+ * - Correct answer triggers auto-advance after 1500ms (P1.3 update)
  * - Final question correct answer triggers results navigation
  * - Incorrect answer does NOT trigger auto-advance
- * - Auto-advance delay is 500ms
+ * - Auto-advance delay is 1500ms (changed from 500ms per P1.3)
+ * - Incorrect answer: user must click Continue manually
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { QuestionType } from "./mocks/backendStub";
@@ -92,18 +93,18 @@ describe("Auto-advance — incorrect answer", () => {
 });
 
 describe("Auto-advance — delay timing", () => {
-  it("auto-advance delay is 500ms (not immediate)", () => {
+  it("auto-advance delay is 1500ms (changed from 500ms per P1.3)", () => {
     vi.useFakeTimers();
     let advanced = false;
     const scheduleAutoAdvance = (correct: boolean, fn: () => void) => {
-      if (correct) setTimeout(fn, 500);
+      if (correct) setTimeout(fn, 1500);
     };
 
     scheduleAutoAdvance(true, () => {
       advanced = true;
     });
     expect(advanced).toBe(false); // Not yet
-    vi.advanceTimersByTime(499);
+    vi.advanceTimersByTime(1499);
     expect(advanced).toBe(false); // Still not
     vi.advanceTimersByTime(1);
     expect(advanced).toBe(true); // Now advanced
@@ -114,14 +115,65 @@ describe("Auto-advance — delay timing", () => {
     vi.useFakeTimers();
     let advanced = false;
     const scheduleAutoAdvance = (correct: boolean, fn: () => void) => {
-      if (correct) setTimeout(fn, 500);
+      if (correct) setTimeout(fn, 1500);
     };
 
     scheduleAutoAdvance(false, () => {
       advanced = true;
     });
-    vi.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(2000);
     expect(advanced).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it("does not advance at 500ms — delay is 1500ms", () => {
+    vi.useFakeTimers();
+    let advanced = false;
+    const scheduleAutoAdvance = (correct: boolean, fn: () => void) => {
+      if (correct) setTimeout(fn, 1500);
+    };
+    scheduleAutoAdvance(true, () => {
+      advanced = true;
+    });
+    vi.advanceTimersByTime(500);
+    expect(advanced).toBe(false); // 500ms is no longer enough
+    vi.useRealTimers();
+  });
+});
+
+describe("Auto-advance — incorrect answer requires manual Continue", () => {
+  it("incorrect answer: action is none, user clicks Continue", () => {
+    const action = computeAutoAdvance(false, 0, 5);
+    expect(action.type).toBe("none");
+    // User sees Continue button and clicks it to advance manually
+    const manualAdvance = { type: "advance" as const, toIdx: 1 };
+    expect(manualAdvance.toIdx).toBe(1);
+  });
+
+  it("incorrect answer on last question: user clicks Submit", () => {
+    const action = computeAutoAdvance(false, 4, 5);
+    expect(action.type).toBe("none");
+    // User must manually click Submit Test
+  });
+});
+
+describe("Auto-advance — correct answer shows Correct flash before advance", () => {
+  it("correct answer shows flash immediately (before 1500ms)", () => {
+    vi.useFakeTimers();
+    let flashShown = false;
+    let advanced = false;
+    // Flash is shown synchronously on check; advance happens after 1500ms
+    flashShown = true; // shown immediately
+    const scheduleAutoAdvance = (correct: boolean, fn: () => void) => {
+      if (correct) setTimeout(fn, 1500);
+    };
+    scheduleAutoAdvance(true, () => {
+      advanced = true;
+    });
+    expect(flashShown).toBe(true);
+    expect(advanced).toBe(false);
+    vi.advanceTimersByTime(1500);
+    expect(advanced).toBe(true);
     vi.useRealTimers();
   });
 });

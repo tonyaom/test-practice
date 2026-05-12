@@ -235,3 +235,44 @@ describe("deleteSection – admin-only guard", () => {
     );
   });
 });
+
+// ── adminDeleteUser ────────────────────────────────────────────────────────────
+
+describe("adminDeleteUser – admin-only guard", () => {
+  it("allows admin to delete a regular user", async () => {
+    const result = await mockBackend.adminDeleteUser(ADMIN, "admin2fa");
+    expect(result.__kind__).toBe("ok");
+  });
+
+  it("rejects a regular user calling adminDeleteUser", async () => {
+    await assertUnauthorized(() =>
+      mockBackend.adminDeleteUser(USER, "admin2fa"),
+    );
+  });
+
+  it("rejects an unknown username calling adminDeleteUser", async () => {
+    await assertUnauthorized(() =>
+      mockBackend.adminDeleteUser(UNKNOWN, "admin2fa"),
+    );
+  });
+
+  it("blocks deleting the seeded admin account 'abcd'", async () => {
+    const result = await mockBackend.adminDeleteUser(ADMIN, ADMIN);
+    // Seeded admin is 'abcd' — must be blocked
+    expect(result.__kind__).toBe("err");
+  });
+
+  it("blocks admin from deleting themselves", async () => {
+    // Admin is 'abcd', trying to delete themselves
+    const result = await mockBackend.adminDeleteUser(ADMIN, ADMIN);
+    expect(result.__kind__).toBe("err");
+  });
+
+  it("deleted user no longer appears in adminListUsers", async () => {
+    // Use a fresh username not used in other tests
+    await mockBackend.adminDeleteUser(ADMIN, "sarah");
+    const users = await mockBackend.adminListUsers(ADMIN);
+    const found = users.find((u) => u.username === "sarah");
+    expect(found).toBeUndefined();
+  });
+});

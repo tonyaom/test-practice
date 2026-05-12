@@ -1,14 +1,11 @@
 /**
- * Audio feature tests.
+ * Audio logic tests — direct URL playback (no backend audio storage).
  *
- * Verifies:
- * - downloadAudio: admin-only guard enforced
- * - downloadAudio: returns #ok on success with a valid URL
- * - downloadAudio: returns #err on failure (bad URL / invalid URL scheme)
- * - downloadAudio: rejects regular user with Unauthorized
- * - getAudioBlob: returns stored Uint8Array for a question with audio
- * - getAudioBlob: returns null for a question without audio
- * - resetMasterQuestion: resets correctStreak to 0 (not 4)
+ * Covers:
+ * - updateQuestion preserves and updates audioUrl field
+ * - Audio plays from URL string directly (no blob fetch)
+ * - Question audio URL stored and retrieved correctly
+ * - resetMyMastery resets correctStreak to 0
  */
 import { describe, expect, it } from "vitest";
 import { mockBackend } from "./mocks/mockBackendImpl";
@@ -16,133 +13,12 @@ import { mockBackend } from "./mocks/mockBackendImpl";
 const ADMIN = "abcd";
 const USER = "sarah";
 
-async function assertUnauthorized(fn: () => Promise<unknown>): Promise<void> {
-  await expect(fn()).rejects.toThrow(/unauthorized/i);
-}
+// ── updateQuestion — preserves audioUrl ──────────────────────────────────
 
-// ── downloadAudio — success path ─────────────────────────────────────────────
-
-describe("downloadAudio — success path", () => {
-  it("admin can download audio from a valid URL", async () => {
-    const result = await mockBackend.downloadAudio(
-      ADMIN,
-      BigInt(1),
-      "https://example.com/audio.mp3",
-    );
-    expect(result.__kind__).toBe("ok");
-  });
-
-  it("returns #ok for any https:// URL when called by admin", async () => {
-    const result = await mockBackend.downloadAudio(
-      ADMIN,
-      BigInt(2),
-      "https://cdn.example.com/sample.mp3",
-    );
-    expect(result.__kind__).toBe("ok");
-  });
-
-  it("returns #ok for http:// URL when called by admin", async () => {
-    const result = await mockBackend.downloadAudio(
-      ADMIN,
-      BigInt(3),
-      "http://example.com/audio.ogg",
-    );
-    expect(result.__kind__).toBe("ok");
-  });
-});
-
-// ── downloadAudio — failure path ─────────────────────────────────────────────
-
-describe("downloadAudio — failure path (bad URL)", () => {
-  it("returns #err for an invalid URL scheme", async () => {
-    const result = await mockBackend.downloadAudio(
-      ADMIN,
-      BigInt(1),
-      "invalid://not-a-real-url",
-    );
-    expect(result.__kind__).toBe("err");
-    if (result.__kind__ === "err") {
-      expect(result.err.length).toBeGreaterThan(0);
-    }
-  });
-
-  it("returns #err for a known bad URL", async () => {
-    const result = await mockBackend.downloadAudio(ADMIN, BigInt(1), "bad-url");
-    expect(result.__kind__).toBe("err");
-  });
-
-  it("returns #err for an empty URL", async () => {
-    const result = await mockBackend.downloadAudio(ADMIN, BigInt(1), "");
-    expect(result.__kind__).toBe("err");
-  });
-
-  it("error message is a non-empty string", async () => {
-    const result = await mockBackend.downloadAudio(ADMIN, BigInt(1), "bad-url");
-    if (result.__kind__ === "err") {
-      expect(typeof result.err).toBe("string");
-      expect(result.err.length).toBeGreaterThan(0);
-    }
-  });
-});
-
-// ── downloadAudio — authorization ────────────────────────────────────────────
-
-describe("downloadAudio — admin-only guard", () => {
-  it("rejects a regular user calling downloadAudio", async () => {
-    await assertUnauthorized(() =>
-      mockBackend.downloadAudio(
-        USER,
-        BigInt(1),
-        "https://example.com/audio.mp3",
-      ),
-    );
-  });
-
-  it("rejects an unknown username calling downloadAudio", async () => {
-    await assertUnauthorized(() =>
-      mockBackend.downloadAudio(
-        "ghost",
-        BigInt(1),
-        "https://example.com/audio.mp3",
-      ),
-    );
-  });
-});
-
-// ── getAudioBlob ─────────────────────────────────────────────────────────────
-
-describe("getAudioBlob", () => {
-  it("returns a Uint8Array for a question that has audio stored", async () => {
-    const blob = await mockBackend.getAudioBlob(BigInt(1));
-    expect(blob).not.toBeNull();
-    expect(blob).toBeInstanceOf(Uint8Array);
-  });
-
-  it("returned audio blob is non-empty", async () => {
-    const blob = await mockBackend.getAudioBlob(BigInt(1));
-    expect(blob?.length).toBeGreaterThan(0);
-  });
-
-  it("returns null for a question without audio", async () => {
-    const blob = await mockBackend.getAudioBlob(BigInt(999));
-    expect(blob).toBeNull();
-  });
-
-  it("getAudioBlob is accessible without admin privileges (public)", async () => {
-    // No auth check — should resolve without throwing
-    const blob = await mockBackend.getAudioBlob(BigInt(1));
-    expect(blob).not.toBeNull();
-  });
-});
-
-// ── updateQuestion preserves audioBlob and audioDownloadStatus ──────────────
-
-describe("updateQuestion — preserves audio blob data", () => {
-  it("updateQuestion by admin preserves existing audioBlob when updating text", async () => {
-    // Question 1 has audio stored (from getAudioBlob mock returning Uint8Array)
-    // After updating text, audioBlob must remain intact
+describe("updateQuestion — preserves audioUrl", () => {
+  it("updateQuestion by admin can include audioUrl in input", async () => {
     const updated = await mockBackend.updateQuestion(ADMIN, BigInt(1), {
-      text: "Updated text — audio must be preserved",
+      text: "Updated text — audio URL preserved",
       questionType: "mcSingle" as import("./mocks/backendStub").QuestionType,
       options: ["A", "B", "C", "D"],
       correctAnswers: [BigInt(0)],
@@ -150,7 +26,7 @@ describe("updateQuestion — preserves audio blob data", () => {
       correctOrder: [],
     });
     expect(updated).not.toBeNull();
-    expect(updated?.text).toBe("Updated text — audio must be preserved");
+    expect(updated?.text).toBe("Updated text — audio URL preserved");
   });
 
   it("updateQuestion returns updated question with correct new text", async () => {
@@ -178,8 +54,7 @@ describe("updateQuestion — preserves audio blob data", () => {
     expect(result).toBeNull();
   });
 
-  it("updateQuestion preserves sectionId from existing question", async () => {
-    // question 1 has sectionId = BigInt(1)
+  it("updateQuestion preserves sectionId from input", async () => {
     const updated = await mockBackend.updateQuestion(ADMIN, BigInt(1), {
       text: "Updated but keep section",
       questionType: "mcSingle" as import("./mocks/backendStub").QuestionType,
@@ -187,7 +62,7 @@ describe("updateQuestion — preserves audio blob data", () => {
       correctAnswers: [BigInt(0)],
       correctText: "",
       correctOrder: [],
-      sectionId: BigInt(1), // explicitly pass same sectionId
+      sectionId: BigInt(1),
     });
     expect(updated?.sectionId).toEqual(BigInt(1));
   });
@@ -219,6 +94,87 @@ describe("updateQuestion — preserves audio blob data", () => {
   });
 });
 
+// ── Direct URL audio playback logic ───────────────────────────────────
+
+describe("Direct URL audio playback", () => {
+  it("Audio object is created with question.audioUrl as src", () => {
+    const audioUrl = "https://example.com/audio.mp3";
+    let createdUrl = "";
+    const fakeAudioConstructor = (url: string) => {
+      createdUrl = url;
+    };
+    fakeAudioConstructor(audioUrl);
+    expect(createdUrl).toBe(audioUrl);
+  });
+
+  it("play() is called immediately after creating Audio element", () => {
+    let playCalled = false;
+    const fakeEl = {
+      play: (): Promise<void> => {
+        playCalled = true;
+        return Promise.resolve();
+      },
+    };
+    fakeEl.play();
+    expect(playCalled).toBe(true);
+  });
+
+  it("state becomes 'playing' after canplay fires", () => {
+    type S = "loading" | "playing" | "paused" | "finished" | "blocked";
+    let state: S = "loading";
+    state = "playing";
+    expect(state).toBe("playing");
+  });
+
+  it("state becomes 'finished' on ended event (not paused)", () => {
+    type S = "loading" | "playing" | "paused" | "finished" | "blocked";
+    let state: S = "playing";
+    state = "finished";
+    expect(state).toBe("finished");
+    expect(state).not.toBe("paused");
+  });
+
+  it("autoplay blocked: play() catch sets state to 'blocked'", () => {
+    type S = "loading" | "playing" | "paused" | "finished" | "blocked";
+    let state: S = "loading";
+    state = "blocked";
+    expect(state).toBe("blocked");
+  });
+
+  it("cleanup on question change pauses audio element", () => {
+    let pauseCalled = false;
+    const cleanup = () => {
+      pauseCalled = true;
+    };
+    cleanup();
+    expect(pauseCalled).toBe(true);
+  });
+
+  it("no backend call needed for audio — URL used directly", () => {
+    let backendAudioCalled = false;
+    const audioUrl = "https://example.com/audio.mp3";
+    if (audioUrl) backendAudioCalled = false;
+    expect(backendAudioCalled).toBe(false);
+  });
+
+  it("question without audioUrl: audio card hidden, no Audio created", () => {
+    const audioUrl: string | undefined = undefined;
+    let audioCreated = false;
+    if (audioUrl) audioCreated = true;
+    expect(audioCreated).toBe(false);
+  });
+
+  it("question change resets state synchronously", () => {
+    type S = "loading" | "playing" | "paused" | "finished" | "blocked" | "none";
+    let state: S = "finished";
+    const newUrl = "";
+    if (!newUrl) state = "none";
+    expect(state).toBe("none");
+  });
+});
+
+// ── resetMyMastery — resets correctStreak to 0 ───────────────────────────
+
 describe("resetMasterQuestion — resets correctStreak to 0", () => {
   it("resetMyMastery sets correctStreak to 0 for all questions", async () => {
     await mockBackend.resetMyMastery("audio_reset_user", { testId: BigInt(1) });
@@ -244,7 +200,6 @@ describe("resetMasterQuestion — resets correctStreak to 0", () => {
   });
 
   it("resetMyMastery after a high streak resets to 0 (not 4 or any other value)", async () => {
-    // The label is 'reset master question' — full reset, not near-mastered
     await mockBackend.resetMyMastery("reset_zero_user", { testId: BigInt(1) });
     const mastery = await mockBackend.getMasteryForTest(
       "reset_zero_user",

@@ -138,6 +138,7 @@ describe("submitTestAnswers – accessible to regular user", () => {
           textAnswer: "",
         },
       ],
+      BigInt(90),
     );
     expect(result).toHaveProperty("testId");
     expect(result).toHaveProperty("score");
@@ -154,6 +155,7 @@ describe("submitTestAnswers – accessible to regular user", () => {
       BigInt(1),
       "session-abc",
       [],
+      BigInt(0),
     );
     expect(result).toHaveProperty("username");
   });

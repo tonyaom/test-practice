@@ -44,8 +44,6 @@ export const Question = IDL.Record({
   'explanation' : IDL.Opt(IDL.Text),
   'questionUpdatedAt' : IDL.Int,
   'text' : IDL.Text,
-  'audioBlob' : IDL.Opt(IDL.Vec(IDL.Nat8)),
-  'audioDownloadStatus' : IDL.Opt(IDL.Text),
   'audioUrl' : IDL.Opt(IDL.Text),
   'questionType' : QuestionType,
   'sectionId' : IDL.Opt(IDL.Nat),
@@ -136,6 +134,34 @@ export const AdminDashboardStats = IDL.Record({
   'totalMasteredQuestions' : IDL.Nat,
   'totalMasteryRecords' : IDL.Nat,
   'totalUsers' : IDL.Nat,
+});
+export const SectionData = IDL.Record({
+  'id' : IDL.Nat,
+  'name' : IDL.Text,
+  'createdAt' : IDL.Int,
+  'description' : IDL.Text,
+  'updatedAt' : IDL.Int,
+  'testId' : IDL.Nat,
+});
+export const TestFullData = IDL.Record({
+  'id' : IDL.Nat,
+  'name' : IDL.Text,
+  'createdAt' : IDL.Int,
+  'description' : IDL.Text,
+  'updatedAt' : IDL.Int,
+  'questions' : IDL.Vec(Question),
+  'sections' : IDL.Vec(SectionData),
+});
+export const DataManifest = IDL.Record({
+  'testCount' : IDL.Nat,
+  'globalUpdatedAt' : IDL.Text,
+  'sectionCount' : IDL.Nat,
+  'checksum' : IDL.Text,
+  'questionCount' : IDL.Nat,
+});
+export const AllTestData = IDL.Record({
+  'tests' : IDL.Vec(TestFullData),
+  'manifest' : DataManifest,
 });
 export const Timestamp = IDL.Int;
 export const QuestionId = IDL.Nat;
@@ -276,6 +302,11 @@ export const idlService = IDL.Service({
     ),
   'adminActivateUser' : IDL.Func([IDL.Text, UserId], [IDL.Bool], []),
   'adminDeactivateUser' : IDL.Func([IDL.Text, UserId], [IDL.Bool], []),
+  'adminDeleteUser' : IDL.Func(
+      [IDL.Text, UserId],
+      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
+    ),
   'adminGetUserDetailedProgress' : IDL.Func(
       [IDL.Text, UserId],
       [UserDetailedProgress],
@@ -306,11 +337,6 @@ export const idlService = IDL.Service({
       [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
       [],
     ),
-  'downloadAudio' : IDL.Func(
-      [IDL.Text, IDL.Nat, IDL.Text],
-      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
-      [],
-    ),
   'enable2FA' : IDL.Func(
       [IDL.Text, IDL.Text],
       [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
@@ -321,7 +347,8 @@ export const idlService = IDL.Service({
       [AdminDashboardStats],
       ['query'],
     ),
-  'getAudioBlob' : IDL.Func([IDL.Nat], [IDL.Opt(IDL.Vec(IDL.Nat8))], ['query']),
+  'getAllTestData' : IDL.Func([], [AllTestData], ['query']),
+  'getDataManifest' : IDL.Func([], [DataManifest], ['query']),
   'getMasteryForTest' : IDL.Func(
       [IDL.Text, TestId],
       [IDL.Vec(QuestionMastery)],
@@ -455,8 +482,6 @@ export const idlFactory = ({ IDL }) => {
     'explanation' : IDL.Opt(IDL.Text),
     'questionUpdatedAt' : IDL.Int,
     'text' : IDL.Text,
-    'audioBlob' : IDL.Opt(IDL.Vec(IDL.Nat8)),
-    'audioDownloadStatus' : IDL.Opt(IDL.Text),
     'audioUrl' : IDL.Opt(IDL.Text),
     'questionType' : QuestionType,
     'sectionId' : IDL.Opt(IDL.Nat),
@@ -547,6 +572,34 @@ export const idlFactory = ({ IDL }) => {
     'totalMasteredQuestions' : IDL.Nat,
     'totalMasteryRecords' : IDL.Nat,
     'totalUsers' : IDL.Nat,
+  });
+  const SectionData = IDL.Record({
+    'id' : IDL.Nat,
+    'name' : IDL.Text,
+    'createdAt' : IDL.Int,
+    'description' : IDL.Text,
+    'updatedAt' : IDL.Int,
+    'testId' : IDL.Nat,
+  });
+  const TestFullData = IDL.Record({
+    'id' : IDL.Nat,
+    'name' : IDL.Text,
+    'createdAt' : IDL.Int,
+    'description' : IDL.Text,
+    'updatedAt' : IDL.Int,
+    'questions' : IDL.Vec(Question),
+    'sections' : IDL.Vec(SectionData),
+  });
+  const DataManifest = IDL.Record({
+    'testCount' : IDL.Nat,
+    'globalUpdatedAt' : IDL.Text,
+    'sectionCount' : IDL.Nat,
+    'checksum' : IDL.Text,
+    'questionCount' : IDL.Nat,
+  });
+  const AllTestData = IDL.Record({
+    'tests' : IDL.Vec(TestFullData),
+    'manifest' : DataManifest,
   });
   const Timestamp = IDL.Int;
   const QuestionId = IDL.Nat;
@@ -687,6 +740,11 @@ export const idlFactory = ({ IDL }) => {
       ),
     'adminActivateUser' : IDL.Func([IDL.Text, UserId], [IDL.Bool], []),
     'adminDeactivateUser' : IDL.Func([IDL.Text, UserId], [IDL.Bool], []),
+    'adminDeleteUser' : IDL.Func(
+        [IDL.Text, UserId],
+        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
+      ),
     'adminGetUserDetailedProgress' : IDL.Func(
         [IDL.Text, UserId],
         [UserDetailedProgress],
@@ -721,11 +779,6 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
         [],
       ),
-    'downloadAudio' : IDL.Func(
-        [IDL.Text, IDL.Nat, IDL.Text],
-        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
-        [],
-      ),
     'enable2FA' : IDL.Func(
         [IDL.Text, IDL.Text],
         [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
@@ -736,11 +789,8 @@ export const idlFactory = ({ IDL }) => {
         [AdminDashboardStats],
         ['query'],
       ),
-    'getAudioBlob' : IDL.Func(
-        [IDL.Nat],
-        [IDL.Opt(IDL.Vec(IDL.Nat8))],
-        ['query'],
-      ),
+    'getAllTestData' : IDL.Func([], [AllTestData], ['query']),
+    'getDataManifest' : IDL.Func([], [DataManifest], ['query']),
     'getMasteryForTest' : IDL.Func(
         [IDL.Text, TestId],
         [IDL.Vec(QuestionMastery)],

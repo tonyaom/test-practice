@@ -1,6 +1,16 @@
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -16,11 +26,13 @@ import {
   Circle,
   ShieldOff,
   Star,
+  Trash2,
   Users,
   XCircle,
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { ADMIN_USERNAME } from "../../constants/auth.constants";
 import { useAuth } from "../../hooks/useAuth";
 import { useBackend } from "../../hooks/useBackend";
 import type { AdminUserInfo, UserProgressInfo } from "../../types";
@@ -261,6 +273,9 @@ export function AdminUsersPage() {
   const queryClient = useQueryClient();
   const adminUsername = session?.username ?? "";
   const [selectedUser, setSelectedUser] = useState<AdminUserInfo | null>(null);
+  const [userToDelete, setUserToDelete] = useState<AdminUserInfo | null>(null);
+
+  const SEEDED_ADMIN = ADMIN_USERNAME;
 
   const { data: users = [], isLoading } = useQuery<AdminUserInfo[]>({
     queryKey: ["adminUsers"],
@@ -295,11 +310,43 @@ export function AdminUsersPage() {
     onError: () => toast.error("Failed to deactivate user"),
   });
 
-  const isMutating = activateMutation.isPending || deactivateMutation.isPending;
+  const deleteMutation = useMutation({
+    mutationFn: async (targetUsername: string) => {
+      if (!backend) throw new Error("Not connected");
+      const result = await backend.adminDeleteUser(
+        adminUsername,
+        targetUsername,
+      );
+      if (result.__kind__ === "err") throw new Error(result.err);
+    },
+    onSuccess: (_, targetUsername) => {
+      queryClient.invalidateQueries({ queryKey: ["adminUsers"] });
+      toast.success(`User "${targetUsername}" has been permanently deleted.`);
+      setUserToDelete(null);
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to delete user");
+      setUserToDelete(null);
+    },
+  });
+
+  const isMutating =
+    activateMutation.isPending ||
+    deactivateMutation.isPending ||
+    deleteMutation.isPending;
 
   function canToggle(user: AdminUserInfo): boolean {
     // Cannot deactivate self or other admins
     return user.username !== adminUsername && user.role !== "admin";
+  }
+
+  function canDelete(user: AdminUserInfo): boolean {
+    // Cannot delete the seeded admin, self, or other admins
+    return (
+      user.username !== SEEDED_ADMIN &&
+      user.username !== adminUsername &&
+      user.role !== "admin"
+    );
   }
 
   return (
@@ -467,6 +514,20 @@ export function AdminUsersPage() {
                           Protected
                         </Button>
                       )}
+
+                      {canDelete(user) && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                          disabled={isMutating}
+                          onClick={() => setUserToDelete(user)}
+                          data-ocid={`admin.users.delete_button.${idx + 1}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Delete
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </CardHeader>
@@ -482,6 +543,41 @@ export function AdminUsersPage() {
           adminUsername={adminUsername}
           onClose={() => setSelectedUser(null)}
         />
+      )}
+
+      {userToDelete && (
+        <AlertDialog open onOpenChange={(o) => !o && setUserToDelete(null)}>
+          <AlertDialogContent data-ocid="admin.users.delete.dialog">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="font-display">
+                Delete user permanently?
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to permanently delete{" "}
+                <strong>@{userToDelete.username}</strong>? This will remove
+                their account, all test results, and all mastery progress. This
+                cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel
+                onClick={() => setUserToDelete(null)}
+                data-ocid="admin.users.delete.cancel_button"
+              >
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                disabled={deleteMutation.isPending}
+                onClick={() => deleteMutation.mutate(userToDelete.username)}
+                data-ocid="admin.users.delete.confirm_button"
+              >
+                <Trash2 className="w-4 h-4 mr-1.5" />
+                Delete Forever
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
     </div>
   );

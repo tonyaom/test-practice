@@ -4,6 +4,7 @@
  * Keys used in localStorage:
  *   prepstream_test_cache_{testId}  — full test+questions+sections bundle
  *   prepstream_cache_meta           — map of testId -> updatedAt for fast invalidation
+ *   prepstream_data_manifest        — global version manifest for one-call version check
  */
 
 export interface TestCacheEntry {
@@ -49,11 +50,22 @@ export interface CachedSection {
   updatedAt: string;
 }
 
+/** Stored manifest shape in localStorage */
+export interface DataManifestCache {
+  checksum: string;
+  globalUpdatedAt: string;
+  testCount: number;
+  questionCount: number;
+  sectionCount: number;
+  savedAt: number;
+}
+
 type CacheMeta = Record<string, string>;
 
 const CACHE_KEY = (testId: string | number) =>
   `prepstream_test_cache_${testId}`;
 const META_KEY = "prepstream_cache_meta";
+const MANIFEST_KEY = "prepstream_data_manifest";
 
 function loadMeta(): CacheMeta {
   try {
@@ -173,6 +185,7 @@ export function clearAllCache(): void {
       localStorage.removeItem(CACHE_KEY(testId));
     }
     localStorage.removeItem(META_KEY);
+    localStorage.removeItem(MANIFEST_KEY);
     // Also clear all audio caches by scanning all keys
     const keysToRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
@@ -183,6 +196,41 @@ export function clearAllCache(): void {
   } catch {
     // ignore
   }
+}
+
+// ── Manifest cache ──────────────────────────────────────────────────────────────
+
+/** Retrieve the saved data manifest from localStorage. Returns null if none saved. */
+export function getSavedManifest(): DataManifestCache | null {
+  try {
+    const raw = localStorage.getItem(MANIFEST_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as DataManifestCache;
+  } catch {
+    return null;
+  }
+}
+
+/** Save a data manifest to localStorage. */
+export function saveManifest(
+  manifest: Omit<DataManifestCache, "savedAt">,
+): void {
+  try {
+    const entry: DataManifestCache = { ...manifest, savedAt: Date.now() };
+    localStorage.setItem(MANIFEST_KEY, JSON.stringify(entry));
+  } catch {
+    // Storage full — silently ignore
+  }
+}
+
+/**
+ * Returns true if the local manifest is stale (different checksum or no manifest saved).
+ * Returns false if the saved manifest matches the server checksum — data is current.
+ */
+export function isManifestStale(serverChecksum: string): boolean {
+  const saved = getSavedManifest();
+  if (!saved) return true;
+  return saved.checksum !== serverChecksum;
 }
 
 /**

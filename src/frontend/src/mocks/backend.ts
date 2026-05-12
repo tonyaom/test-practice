@@ -8,18 +8,20 @@
  * within the same browser context (tab). Each new browser context starts fresh.
  *
  * Credentials:
- *   Admin:  username='adbc', password='abcd'
+ *   Admin:  username='abcd', password='abcd'
  *   User:   username='sarah', password='password'
  *   2FA:    username='admin2fa', password='password'
  */
 import type {
   AdminDashboardStats,
   AdminUserInfo,
+  AllTestData,
   AnswerSubmission,
   BackendService,
   CreateQuestionInput,
   CreateSectionInput,
   CreateTestInput,
+  DataManifest,
   LoginResult,
   Question,
   QuestionMastery,
@@ -39,6 +41,7 @@ import type {
   UserSessionResult,
 } from "../services/backendService";
 import { QuestionType, Variant_admin_user } from "../backend";
+import { ADMIN_PASSWORD, ADMIN_USERNAME } from "../constants/auth.constants";
 
 const now = BigInt(Date.now()) * BigInt(1_000_000);
 
@@ -83,7 +86,7 @@ type SerializableTestResult = {
 
 const DEFAULT_STATE: MockState = {
   users: [
-    { username: "adbc", password: "abcd", displayName: "Admin", role: Variant_admin_user.admin, isActive: true },
+    { username: ADMIN_USERNAME, password: ADMIN_PASSWORD, displayName: "Admin", role: Variant_admin_user.admin, isActive: true },
     { username: "sarah", password: "password", displayName: "Sarah", role: Variant_admin_user.user, isActive: true },
     { username: "admin2fa", password: "password", displayName: "Admin2FA", role: Variant_admin_user.user, isActive: true },
     { username: "alice", password: "password", displayName: "Alice Smith", role: Variant_admin_user.user, isActive: true },
@@ -449,6 +452,7 @@ export const mockBackendService: BackendService = {
     testId: bigint,
     sessionId: string,
     submissions: AnswerSubmission[],
+    timeSpentSeconds: bigint = BigInt(0),
   ): Promise<TestResult> => {
     const state = loadState();
     const testQs = state.questions.filter((q) => q.testId === String(testId)).map(toQuestion);
@@ -481,7 +485,7 @@ export const mockBackendService: BackendService = {
       completedAt: nowTs,
       score: BigInt(score),
       totalQuestions: BigInt(submissions.length),
-      timeSpentSeconds: BigInt(0),
+      timeSpentSeconds: timeSpentSeconds ?? BigInt(0),
       questionResults,
       sectionResults: [],
     };
@@ -536,6 +540,22 @@ export const mockBackendService: BackendService = {
     user.isActive = false;
     saveState(state);
     return true;
+  },
+
+  adminDeleteUser: async (_adminUsername: string, targetUsername: string): Promise<SimpleResult> => {
+    const SEEDED_ADMIN = ADMIN_USERNAME;
+    if (targetUsername === SEEDED_ADMIN) {
+      return { __kind__: "err", err: "Cannot delete the seeded admin account" };
+    }
+    if (_adminUsername === targetUsername) {
+      return { __kind__: "err", err: "Cannot delete your own account" };
+    }
+    const state = loadState();
+    const idx = state.users.findIndex((u) => u.username === targetUsername);
+    if (idx === -1) return { __kind__: "err", err: "User not found" };
+    state.users.splice(idx, 1);
+    saveState(state);
+    return { __kind__: "ok", ok: null };
   },
 
   adminGetUserProgress: async (
@@ -605,23 +625,39 @@ export const mockBackendService: BackendService = {
     };
   },
 
-  // ── Audio ─────────────────────────────────────────────────────────────────
-  downloadAudio: async (
-    _username: string,
-    _questionId: bigint,
-    audioUrl: string,
-  ): Promise<SimpleResult> => {
-    if (!audioUrl || audioUrl.trim() === "") {
-      return { __kind__: "err", err: "Invalid URL" };
-    }
-    return { __kind__: "ok", ok: null };
+  // ── Data Sync ─────────────────────────────────────────────────────────────
+  getDataManifest: async (): Promise<DataManifest> => {
+    const state = loadState();
+    const checksum = `mock-${state.tests.length}-${state.questions.length}-${state.sections.length}`;
+    return {
+      checksum,
+      globalUpdatedAt: new Date().toISOString(),
+      testCount: BigInt(state.tests.length),
+      questionCount: BigInt(state.questions.length),
+      sectionCount: BigInt(state.sections.length),
+    };
   },
 
-  getAudioBlob: async (questionId: bigint): Promise<Uint8Array | null> => {
-    if (questionId === BigInt(1)) {
-      return new Uint8Array([0x49, 0x44, 0x33]);
-    }
-    return null;
+  getAllTestData: async (): Promise<AllTestData> => {
+    const state = loadState();
+    const checksum = `mock-${state.tests.length}-${state.questions.length}-${state.sections.length}`;
+    const manifest: DataManifest = {
+      checksum,
+      globalUpdatedAt: new Date().toISOString(),
+      testCount: BigInt(state.tests.length),
+      questionCount: BigInt(state.questions.length),
+      sectionCount: BigInt(state.sections.length),
+    };
+    const tests = state.tests.map((t) => ({
+      ...toTest(t),
+      questions: state.questions
+        .filter((q) => q.testId === t.id)
+        .map(toQuestion),
+      sections: state.sections
+        .filter((s) => s.testId === t.id)
+        .map(toSection),
+    }));
+    return { manifest, tests: tests as AllTestData["tests"] };
   },
 };
 

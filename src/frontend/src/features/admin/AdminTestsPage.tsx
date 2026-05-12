@@ -24,6 +24,7 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import type { TestFormData } from "../../components/TestForm";
 import { TestFormDialog } from "../../components/TestForm";
+import { useDataSyncContext } from "../../context/DataSyncContext";
 import { useAuth } from "../../hooks/useAuth";
 import { useBackend } from "../../hooks/useBackend";
 import type { Test } from "../../types";
@@ -34,6 +35,15 @@ export function AdminTestsPage() {
   const backend = useBackend();
   const queryClient = useQueryClient();
   const username = session?.username ?? "";
+  const { tests: cachedTests, isLoading, refreshData } = useDataSyncContext();
+  // Adapt CachedTest[] to Test[] for type compatibility with mutations/dialogs
+  const tests: Test[] = cachedTests.map((ct) => ({
+    id: BigInt(ct.id),
+    name: ct.name,
+    description: ct.description,
+    updatedAt: BigInt(ct.updatedAt),
+    createdAt: BigInt(0),
+  }));
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editTest, setEditTest] = useState<Test | null>(null);
@@ -47,15 +57,6 @@ export function AdminTestsPage() {
     description: "",
   });
 
-  const { data: tests = [], isLoading } = useQuery<Test[]>({
-    queryKey: ["tests"],
-    queryFn: async () => {
-      if (!backend) return [];
-      return backend.listTests();
-    },
-    enabled: !!backend,
-  });
-
   const createMutation = useMutation({
     mutationFn: async () => {
       if (!backend) throw new Error("Not connected");
@@ -66,6 +67,7 @@ export function AdminTestsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tests"] });
+      refreshData();
       toast.success("Test created successfully");
       setCreateOpen(false);
       setCreateForm({ name: "", description: "" });
@@ -83,6 +85,7 @@ export function AdminTestsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tests"] });
+      refreshData();
       toast.success("Test updated successfully");
       setEditTest(null);
     },
@@ -96,6 +99,7 @@ export function AdminTestsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tests"] });
+      refreshData();
       toast.success("Test deleted");
       setDeleteTest(null);
     },

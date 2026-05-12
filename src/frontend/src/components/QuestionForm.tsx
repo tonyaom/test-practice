@@ -10,11 +10,8 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import {
-  AlertCircle,
-  CheckCircle2,
   GripVertical,
   Image,
-  Loader2,
   Minus,
   Music,
   Plus,
@@ -24,16 +21,8 @@ import {
 import type React from "react";
 import { useRef, useState } from "react";
 import { QuestionType } from "../backend";
-import {
-  FONT_SIZE_MAX,
-  FONT_SIZE_MIN,
-  getFontSize,
-  setFontSize,
-} from "../utils/fontSizeStorage";
 import { QUESTION_TYPE_LABELS, QuestionTypeIcon } from "./QuestionTypeIcon";
 import { RichTextEditor } from "./RichTextEditor";
-
-export { getFontSize, setFontSize };
 
 export interface QuestionFormData {
   text: string;
@@ -47,12 +36,8 @@ export interface QuestionFormData {
   sectionId: number | null;
   /** Optional rich-text explanation shown after the user answers. Supports math via MathEditorModal. */
   explanation: string;
-  /** Audio URL to download and store in backend */
+  /** Audio URL — played directly from this URL (no backend download needed) */
   audioUrl: string;
-  /** Audio download status */
-  audioStatus: "idle" | "downloading" | "ready" | "error";
-  /** Audio download error message */
-  audioErrorMsg: string;
 }
 
 export function defaultQuestionFormData(
@@ -70,8 +55,6 @@ export function defaultQuestionFormData(
     sectionId,
     explanation: "",
     audioUrl: "",
-    audioStatus: "idle",
-    audioErrorMsg: "",
   };
 }
 
@@ -85,9 +68,6 @@ interface QuestionFormProps {
   onChange: (data: QuestionFormData) => void;
   uploadProgress?: number;
   sections?: SectionOption[];
-  onDownloadAudio?: (
-    url: string,
-  ) => Promise<{ success: boolean; error?: string }>;
 }
 
 export function QuestionForm({
@@ -95,17 +75,10 @@ export function QuestionForm({
   onChange,
   uploadProgress = 0,
   sections = [],
-  onDownloadAudio,
 }: QuestionFormProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const dragItemIndex = useRef<number | null>(null);
-  const [fontSize, setFontSizeState] = useState<number>(() => getFontSize());
-
-  function handleFontSizeChange(size: number) {
-    setFontSizeState(size);
-    setFontSize(size);
-  }
 
   function update(partial: Partial<QuestionFormData>) {
     onChange({ ...data, ...partial });
@@ -206,39 +179,13 @@ export function QuestionForm({
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
-  async function handleAudioUrlChange(url: string) {
-    update({ audioUrl: url, audioStatus: "idle", audioErrorMsg: "" });
-  }
-
-  async function handleAudioDownload() {
-    if (!data.audioUrl.trim()) return;
-    update({ audioStatus: "downloading", audioErrorMsg: "" });
-    if (onDownloadAudio) {
-      const result = await onDownloadAudio(data.audioUrl.trim());
-      if (result.success) {
-        update({ audioStatus: "ready", audioErrorMsg: "" });
-      } else {
-        update({
-          audioStatus: "error",
-          audioErrorMsg: result.error ?? "Download failed",
-        });
-      }
-    } else {
-      // No handler provided — mark ready as placeholder
-      update({ audioStatus: "ready", audioErrorMsg: "" });
-    }
-  }
-
-  function handleAudioRetry() {
-    update({ audioStatus: "downloading", audioErrorMsg: "" });
-    handleAudioDownload();
+  function handleAudioUrlChange(url: string) {
+    update({ audioUrl: url });
   }
 
   function clearAudio() {
-    update({ audioUrl: "", audioStatus: "idle", audioErrorMsg: "" });
+    update({ audioUrl: "" });
   }
-
-  const fontSizeStyle: React.CSSProperties = { fontSize: `${fontSize}px` };
 
   const showOptions =
     data.questionType === QuestionType.mcSingle ||
@@ -247,25 +194,6 @@ export function QuestionForm({
 
   return (
     <div className="space-y-5">
-      {/* Font size controls */}
-      <div className="flex items-center gap-2 justify-end">
-        <span className="text-xs text-muted-foreground">Text size:</span>
-        <input
-          type="range"
-          min={FONT_SIZE_MIN}
-          max={FONT_SIZE_MAX}
-          step={1}
-          value={fontSize}
-          onChange={(e) => handleFontSizeChange(Number(e.target.value))}
-          aria-label={`Font size: ${fontSize}px`}
-          data-ocid="question_form.font_size_slider"
-          className="w-28 sm:w-36 accent-primary cursor-pointer"
-        />
-        <span className="text-xs text-muted-foreground tabular-nums w-8 text-right select-none">
-          {fontSize}px
-        </span>
-      </div>
-
       {/* Section assignment */}
       {sections.length > 0 && (
         <div className="space-y-2">
@@ -399,103 +327,31 @@ export function QuestionForm({
           <Input
             value={data.audioUrl}
             onChange={(e) => handleAudioUrlChange(e.target.value)}
-            onBlur={() => {
-              if (data.audioUrl.trim() && data.audioStatus === "idle")
-                handleAudioDownload();
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                handleAudioDownload();
-              }
-            }}
             placeholder="https://example.com/audio.mp3"
             className="flex-1"
             data-ocid="admin.question_form.audio_url.input"
           />
-          {data.audioUrl.trim() && data.audioStatus !== "ready" && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleAudioDownload}
-              disabled={data.audioStatus === "downloading"}
-              data-ocid="admin.question_form.audio_download.button"
-            >
-              {data.audioStatus === "downloading" ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                "Download"
-              )}
-            </Button>
-          )}
           {data.audioUrl.trim() && (
-            <Button
+            <button
               type="button"
-              variant="ghost"
-              size="icon"
               onClick={clearAudio}
               aria-label="Clear audio"
+              className="w-9 h-9 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-muted/60 transition-colors"
               data-ocid="admin.question_form.audio_clear.button"
             >
               <X className="w-4 h-4" />
-            </Button>
+            </button>
           )}
         </div>
 
-        {/* Download progress */}
-        {data.audioStatus === "downloading" && (
+        {/* Inline preview player — shown as soon as a URL is entered */}
+        {data.audioUrl.trim() && (
           <div
-            className="flex items-center gap-2 text-xs text-muted-foreground"
-            data-ocid="admin.question_form.audio.loading_state"
+            className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-muted/40 border border-border"
+            data-ocid="admin.question_form.audio.preview_player"
           >
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            Downloading audio…
-          </div>
-        )}
-
-        {/* Error state with retry */}
-        {data.audioStatus === "error" && (
-          <div
-            className="flex items-start gap-2.5 px-3 py-2 rounded-lg bg-destructive/10 border border-destructive/30"
-            data-ocid="admin.question_form.audio.error_state"
-          >
-            <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-destructive">
-                {data.audioErrorMsg ||
-                  "Download failed: URL not accessible. Max file size is 2MB."}
-              </p>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleAudioRetry}
-              className="shrink-0 text-xs h-7 border-destructive/40 text-destructive hover:bg-destructive/10"
-              data-ocid="admin.question_form.audio.retry_button"
-            >
-              Retry
-            </Button>
-          </div>
-        )}
-
-        {/* Ready state with preview player */}
-        {data.audioStatus === "ready" && (
-          <div
-            className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-accent/10 border border-accent/30"
-            data-ocid="admin.question_form.audio.success_state"
-          >
-            <CheckCircle2 className="w-4 h-4 text-accent shrink-0" />
-            <span className="text-xs font-medium text-accent flex-1">
-              Audio ready
-            </span>
-            <audio
-              src={data.audioUrl}
-              controls
-              className="h-7 max-w-48"
-              data-ocid="admin.question_form.audio.preview_player"
-            >
+            <Music className="w-4 h-4 text-muted-foreground shrink-0" />
+            <audio src={data.audioUrl} controls className="flex-1 h-8">
               <track kind="captions" />
             </audio>
           </div>
@@ -512,7 +368,7 @@ export function QuestionForm({
               ? "Items (set the correct order below)"
               : "Answer Options"}
           </Label>
-          <div className="space-y-2" style={fontSizeStyle}>
+          <div className="space-y-2">
             {data.options.map((opt, i) => {
               const isCorrect = data.correctAnswers.includes(i);
               const optKey = `opt-${i}`;

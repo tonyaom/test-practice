@@ -31,12 +31,16 @@ import {
   PlayCircle,
   RotateCcw,
   Shuffle,
+  Zap,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { MasteryBadge } from "../../components/MasteryBadge";
+import { useDataSyncContext } from "../../context/DataSyncContext";
 import { useAuth } from "../../hooks/useAuth";
 import { useBackend } from "../../hooks/useBackend";
 import type { Section, Test, TestSession } from "../../types";
+import type { CachedTest } from "../../utils/offlineCache";
 import {
   clearAllCache,
   getTestCache,
@@ -51,6 +55,17 @@ import {
   saveSession,
 } from "../../utils/testSessions";
 
+/** Convert a CachedTest to a minimal Test shape the modal understands. */
+function cachedTestToTest(ct: CachedTest): Test {
+  return {
+    id: BigInt(ct.id),
+    name: ct.name,
+    description: ct.description,
+    updatedAt: BigInt(ct.updatedAt),
+    createdAt: BigInt(0),
+  };
+}
+
 interface StartTestModalProps {
   test: Test;
   onClose: () => void;
@@ -61,9 +76,14 @@ function StartTestModal({ test, onClose }: StartTestModalProps) {
   const backend = useBackend();
   const { session } = useAuth();
   const username = session?.username ?? "";
+  const { getSections, getQuestions } = useDataSyncContext();
   const [randomizeQuestions, setRandomizeQuestions] = useState(true);
   const [randomizeAnswers, setRandomizeAnswers] = useState(true);
-  const [entireTest, setEntireTest] = useState(false);
+  /** "sections" = pick specific sections; "entire" = whole test */
+  const [practiceMode, setPracticeMode] = useState<"sections" | "entire">(
+    "sections",
+  );
+  const entireTest = practiceMode === "entire";
   const [selectedSectionIds, setSelectedSectionIds] = useState<number[]>([]);
   const [existingSession, setExistingSession] = useState<TestSession | null>(
     null,
@@ -80,16 +100,25 @@ function StartTestModal({ test, onClose }: StartTestModalProps) {
     setExistingSession(found);
   }, [test.id]);
 
-  const { data: sections = [], isLoading: sectionsLoading } = useQuery<
-    Section[]
-  >({
-    queryKey: ["sections", String(test.id)],
-    queryFn: async () => {
-      if (!backend) return [];
-      return backend.listSectionsForTest(BigInt(test.id));
-    },
-    enabled: !!backend,
-  });
+  // Read sections/questions from cache (no backend calls needed)
+  const cachedSections = getSections(String(test.id));
+  const sectionsLoading = false;
+  // Convert CachedSection[] to Section[]-compatible shape for downstream code
+  const sections: Section[] = cachedSections.map((cs) => ({
+    id: BigInt(cs.id),
+    testId: BigInt(cs.testId),
+    name: cs.name,
+    description: cs.description,
+    updatedAt: BigInt(cs.updatedAt),
+    createdAt: BigInt(0),
+  }));
+
+  const cachedQuestions = getQuestions(String(test.id));
+  // Convert CachedQuestion[] to Question[]-compatible shape for counts
+  const allQuestions = cachedQuestions.map((cq) => ({
+    id: BigInt(cq.id),
+    sectionId: cq.sectionId != null ? BigInt(cq.sectionId) : undefined,
+  }));
 
   // Pre-select all sections once they are loaded
   // biome-ignore lint/correctness/useExhaustiveDependencies: only run when sections first load
@@ -98,18 +127,8 @@ function StartTestModal({ test, onClose }: StartTestModalProps) {
     // Build the full list of section IDs (including uncategorised if needed)
     const ids = sections.map((s) => Number(s.id));
     setSelectedSectionIds(ids);
-    setEntireTest(false);
+    // Switch to sections mode when sections first load
   }, [sections.length]);
-
-  // Load questions to compute per-section counts
-  const { data: allQuestions = [] } = useQuery({
-    queryKey: ["questions", String(test.id)],
-    queryFn: async () => {
-      if (!backend) return [];
-      return backend.listQuestionsForTest(BigInt(test.id));
-    },
-    enabled: !!backend,
-  });
 
   /** Count questions that belong to a given section */
   function sectionQuestionCount(sectionId: bigint): number {
@@ -128,14 +147,12 @@ function StartTestModal({ test, onClose }: StartTestModalProps) {
 
   function toggleSection(id: bigint) {
     const numId = Number(id);
-    setEntireTest(false);
     setSelectedSectionIds((prev) =>
       prev.includes(numId) ? prev.filter((x) => x !== numId) : [...prev, numId],
     );
   }
 
   function toggleUncategorised() {
-    setEntireTest(false);
     setSelectedSectionIds((prev) =>
       prev.includes(UNCATEGORISED_ID)
         ? prev.filter((x) => x !== UNCATEGORISED_ID)
@@ -143,29 +160,23 @@ function StartTestModal({ test, onClose }: StartTestModalProps) {
     );
   }
 
-  function handleEntireTestChange(checked: boolean) {
-    if (checked) {
-      setEntireTest(true);
-      setSelectedSectionIds([]);
-    } else {
-      setEntireTest(false);
-    }
-  }
-
-  async function handleResetSectionMastery(sectionId: bigint) {
+  function handleResetSectionMastery(sectionId: bigint) {
     if (!backend) return;
     setResettingSectionId(sectionId);
-    try {
-      await backend.resetMyMastery(username, {
+    backend
+      .resetMyMastery(username, {
         testId: BigInt(test.id),
         ...(sectionId !== BigInt(-1) ? { sectionId } : {}),
-      } as unknown as Parameters<typeof backend.resetMyMastery>[1]);
-      toast.success("Mastery reset for this section.");
-    } catch {
-      toast.error("Failed to reset section mastery.");
-    } finally {
-      setResettingSectionId(null);
-    }
+      } as unknown as Parameters<typeof backend.resetMyMastery>[1])
+      .then(() => {
+        toast.success("Mastery reset for this section.");
+      })
+      .catch(() => {
+        toast.error("Failed to reset section mastery.");
+      })
+      .finally(() => {
+        setResettingSectionId(null);
+      });
   }
 
   /** The final list of section IDs to pass to session: empty means entire test */
@@ -302,6 +313,16 @@ function StartTestModal({ test, onClose }: StartTestModalProps) {
 
   const canStart = entireTest || selectedSectionIds.length > 0;
 
+  // Compute total selected question count for badge
+  const selectedTotalCount =
+    practiceMode === "entire"
+      ? allQuestions.length
+      : selectedSectionIds.reduce((sum, sid) => {
+          if (sid === UNCATEGORISED_ID) return sum + uncategorisedCount;
+          const sec = sections.find((s) => Number(s.id) === sid);
+          return sec ? sum + sectionQuestionCount(sec.id) : sum;
+        }, 0);
+
   return (
     <>
       <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -317,13 +338,184 @@ function StartTestModal({ test, onClose }: StartTestModalProps) {
           </DialogHeader>
 
           <div className="py-4 border-y border-border space-y-5">
-            {/* Randomization options */}
+            {/* Group 1: What to practice */}
             <div className="space-y-3">
-              <p className="text-sm font-medium text-foreground flex items-center gap-2">
-                <Shuffle className="w-4 h-4 text-primary" />
-                Randomization Options
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                <Layers className="w-3.5 h-3.5" />
+                What to practice
               </p>
-              <div className="space-y-3 pl-6">
+              {sections.length === 0 ? (
+                <div className="text-sm text-muted-foreground pl-1">
+                  No sections defined — the full test will be used.
+                </div>
+              ) : (
+                <>
+                  {/* Segmented control */}
+                  <div
+                    className="flex gap-1 p-1 bg-muted rounded-lg"
+                    data-ocid="start_test.practice_mode.toggle"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setPracticeMode("entire")}
+                      data-ocid="start_test.practice_mode.entire"
+                      className={`flex-1 text-sm font-medium px-3 py-1.5 rounded-md transition-colors ${
+                        practiceMode === "entire"
+                          ? "bg-card text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      Entire Test
+                      {practiceMode === "entire" && (
+                        <span className="ml-1.5 text-xs text-muted-foreground">
+                          {allQuestions.length} Q
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPracticeMode("sections")}
+                      data-ocid="start_test.practice_mode.sections"
+                      className={`flex-1 text-sm font-medium px-3 py-1.5 rounded-md transition-colors ${
+                        practiceMode === "sections"
+                          ? "bg-card text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      Select Sections
+                      {practiceMode === "sections" &&
+                        selectedSectionIds.length > 0 && (
+                          <span className="ml-1.5 text-xs text-muted-foreground">
+                            {selectedSectionIds.length} section
+                            {selectedSectionIds.length !== 1 ? "s" : ""} ·{" "}
+                            {selectedTotalCount} Q
+                          </span>
+                        )}
+                    </button>
+                  </div>
+
+                  {/* Section checklist — only shown in sections mode */}
+                  {practiceMode === "sections" && (
+                    <div
+                      className="space-y-2.5 pl-1"
+                      data-ocid="start_test.sections.list"
+                    >
+                      {sectionsLoading ? (
+                        <div className="space-y-2">
+                          <Skeleton className="h-5 w-32" />
+                          <Skeleton className="h-5 w-40" />
+                        </div>
+                      ) : (
+                        <>
+                          {sections.map((section, idx) => {
+                            const qCount = sectionQuestionCount(section.id);
+                            const isResetting =
+                              resettingSectionId === section.id;
+                            return (
+                              <div
+                                key={String(section.id)}
+                                className="flex items-center gap-3"
+                                data-ocid={`start_test.section.item.${idx + 1}`}
+                              >
+                                <Checkbox
+                                  id={`section-${String(section.id)}`}
+                                  checked={selectedSectionIds.includes(
+                                    Number(section.id),
+                                  )}
+                                  onCheckedChange={() =>
+                                    toggleSection(section.id)
+                                  }
+                                  data-ocid={`start_test.section.checkbox.${idx + 1}`}
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <Label
+                                    htmlFor={`section-${String(section.id)}`}
+                                    className="text-sm font-medium cursor-pointer"
+                                  >
+                                    {section.name}
+                                  </Label>
+                                  {section.description && (
+                                    <p className="text-xs text-muted-foreground mt-0.5">
+                                      {section.description}
+                                    </p>
+                                  )}
+                                </div>
+                                <span
+                                  className={`question-count-badge shrink-0 ${
+                                    qCount === 0 ? "opacity-40" : ""
+                                  }`}
+                                  data-ocid={`start_test.section.question_count.${idx + 1}`}
+                                  title={`${qCount} question${
+                                    qCount !== 1 ? "s" : ""
+                                  } in this section`}
+                                >
+                                  {qCount}&thinsp;Q
+                                </span>
+                                <button
+                                  type="button"
+                                  disabled={isResetting}
+                                  onClick={() =>
+                                    handleResetSectionMastery(section.id)
+                                  }
+                                  aria-label={`Reset mastery for ${section.name}`}
+                                  title="Reset Master Question for this section"
+                                  className="shrink-0 text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors"
+                                  data-ocid={`start_test.section.reset_mastery.${idx + 1}`}
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            );
+                          })}
+                          {/* Virtual Uncategorised section */}
+                          {uncategorisedCount > 0 && (
+                            <div
+                              className="flex items-center gap-3"
+                              data-ocid={`start_test.section.item.${sections.length + 1}`}
+                            >
+                              <Checkbox
+                                id="section-uncategorised"
+                                checked={selectedSectionIds.includes(
+                                  UNCATEGORISED_ID,
+                                )}
+                                onCheckedChange={toggleUncategorised}
+                                data-ocid={`start_test.section.checkbox.${sections.length + 1}`}
+                              />
+                              <div className="flex-1 min-w-0">
+                                <Label
+                                  htmlFor="section-uncategorised"
+                                  className="text-sm font-medium cursor-pointer"
+                                >
+                                  Uncategorised
+                                </Label>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  Questions not assigned to any section
+                                </p>
+                              </div>
+                              <span
+                                className="question-count-badge shrink-0"
+                                data-ocid={`start_test.section.question_count.${sections.length + 1}`}
+                                title={`${uncategorisedCount} question${uncategorisedCount !== 1 ? "s" : ""} with no section`}
+                              >
+                                {uncategorisedCount}&thinsp;Q
+                              </span>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Group 2: How to practice */}
+            <div className="space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                <Shuffle className="w-3.5 h-3.5" />
+                How to practice
+              </p>
+              <div className="space-y-3">
                 <div className="flex items-start gap-3">
                   <Checkbox
                     id="randomize-questions"
@@ -363,149 +555,6 @@ function StartTestModal({ test, onClose }: StartTestModalProps) {
                   </div>
                 </div>
               </div>
-            </div>
-
-            {/* Section selection */}
-            <div className="space-y-3">
-              <p className="text-sm font-medium text-foreground flex items-center gap-2">
-                <Layers className="w-4 h-4 text-primary" />
-                Sections
-              </p>
-              {sectionsLoading ? (
-                <div className="pl-6 space-y-2">
-                  <Skeleton className="h-5 w-32" />
-                  <Skeleton className="h-5 w-40" />
-                </div>
-              ) : sections.length === 0 ? (
-                <div className="pl-6">
-                  <div className="flex items-start gap-3">
-                    <Checkbox
-                      id="section-entire"
-                      checked
-                      disabled
-                      data-ocid="start_test.section.entire.checkbox"
-                    />
-                    <Label
-                      htmlFor="section-entire"
-                      className="text-sm font-medium cursor-default"
-                    >
-                      Entire Test
-                    </Label>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1.5 pl-7">
-                    No sections defined — the full test will be used.
-                  </p>
-                </div>
-              ) : (
-                <div
-                  className="pl-6 space-y-2.5"
-                  data-ocid="start_test.sections.list"
-                >
-                  {/* Entire test option */}
-                  <div className="flex items-start gap-3">
-                    <Checkbox
-                      id="section-entire"
-                      checked={entireTest}
-                      onCheckedChange={(v) => handleEntireTestChange(!!v)}
-                      data-ocid="start_test.section.entire.checkbox"
-                    />
-                    <Label
-                      htmlFor="section-entire"
-                      className="text-sm font-medium cursor-pointer"
-                    >
-                      Entire Test
-                    </Label>
-                  </div>
-                  {/* Individual sections */}
-                  {sections.map((section, idx) => {
-                    const qCount = sectionQuestionCount(section.id);
-                    const isResetting = resettingSectionId === section.id;
-                    return (
-                      <div
-                        key={String(section.id)}
-                        className="flex items-center gap-3"
-                        data-ocid={`start_test.section.item.${idx + 1}`}
-                      >
-                        <Checkbox
-                          id={`section-${String(section.id)}`}
-                          checked={selectedSectionIds.includes(
-                            Number(section.id),
-                          )}
-                          onCheckedChange={() => toggleSection(section.id)}
-                          data-ocid={`start_test.section.checkbox.${idx + 1}`}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <Label
-                            htmlFor={`section-${String(section.id)}`}
-                            className="text-sm font-medium cursor-pointer"
-                          >
-                            {section.name}
-                          </Label>
-                          {section.description && (
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              {section.description}
-                            </p>
-                          )}
-                        </div>
-                        <span
-                          className={`question-count-badge shrink-0 ${
-                            qCount === 0 ? "opacity-40" : ""
-                          }`}
-                          data-ocid={`start_test.section.question_count.${idx + 1}`}
-                          title={`${qCount} question${
-                            qCount !== 1 ? "s" : ""
-                          } in this section`}
-                        >
-                          {qCount}&thinsp;Q
-                        </span>
-                        <button
-                          type="button"
-                          disabled={isResetting}
-                          onClick={() => handleResetSectionMastery(section.id)}
-                          aria-label={`Reset mastery for ${section.name}`}
-                          title="Reset Master Question for this section"
-                          className="shrink-0 text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors"
-                          data-ocid={`start_test.section.reset_mastery.${idx + 1}`}
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    );
-                  })}
-                  {/* Virtual Uncategorised section — shown only when some questions have no section */}
-                  {uncategorisedCount > 0 && (
-                    <div
-                      className="flex items-center gap-3"
-                      data-ocid={`start_test.section.item.${sections.length + 1}`}
-                    >
-                      <Checkbox
-                        id="section-uncategorised"
-                        checked={selectedSectionIds.includes(UNCATEGORISED_ID)}
-                        onCheckedChange={toggleUncategorised}
-                        data-ocid={`start_test.section.checkbox.${sections.length + 1}`}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <Label
-                          htmlFor="section-uncategorised"
-                          className="text-sm font-medium cursor-pointer"
-                        >
-                          Uncategorised
-                        </Label>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Questions not assigned to any section
-                        </p>
-                      </div>
-                      <span
-                        className="question-count-badge shrink-0"
-                        data-ocid={`start_test.section.question_count.${sections.length + 1}`}
-                        title={`${uncategorisedCount} question${uncategorisedCount !== 1 ? "s" : ""} with no section`}
-                      >
-                        {uncategorisedCount}&thinsp;Q
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
           </div>
 
@@ -587,12 +636,40 @@ export function UserTestsPage() {
   const navigate = useNavigate();
   const { isAdmin, session } = useAuth();
   const username = session?.username ?? "";
+  const { tests: cachedTests, isLoading, refreshData } = useDataSyncContext();
+  // Convert CachedTest[] to Test[] for compatibility with modal and handlers
+  const tests: Test[] = cachedTests.map(cachedTestToTest);
   const [selectedTest, setSelectedTest] = useState<Test | null>(null);
   const [capacityError, setCapacityError] = useState(false);
   const [activeSessions, setActiveSessions] = useState<TestSession[]>([]);
   const [resetConfirmTest, setResetConfirmTest] = useState<Test | null>(null);
   const [resetting, setResetting] = useState(false);
   const [clearCacheConfirm, setClearCacheConfirm] = useState(false);
+
+  // Mastery data per test (best-effort, keyed by testId string)
+  const { data: masteryByTest = {} } = useQuery<
+    Record<string, { mastered: number; total: number }>
+  >({
+    queryKey: ["mastery-summary", username],
+    queryFn: async () => {
+      if (!backend || !username) return {};
+      const result: Record<string, { mastered: number; total: number }> = {};
+      for (const t of cachedTests) {
+        try {
+          const list = await backend.getMasteryForTest(username, Number(t.id));
+          result[t.id] = {
+            mastered: list.filter((m) => m.isMastered).length,
+            total: list.length,
+          };
+        } catch {
+          // skip
+        }
+      }
+      return result;
+    },
+    enabled: !!backend && !!username && cachedTests.length > 0,
+    staleTime: 60_000,
+  });
 
   // Refresh active sessions on mount only; after modal closes, handleModalClose refreshes manually
   useEffect(() => {
@@ -603,15 +680,6 @@ export function UserTestsPage() {
     setSelectedTest(null);
     setActiveSessions(loadActiveSessions());
   }
-
-  const { data: tests = [], isLoading } = useQuery<Test[]>({
-    queryKey: ["tests"],
-    queryFn: async () => {
-      if (!backend) return [];
-      return backend.listTests();
-    },
-    enabled: !!backend,
-  });
 
   function handleStartTest(test: Test) {
     // Block if at 5 sessions AND there's no existing session for this test
@@ -655,8 +723,57 @@ export function UserTestsPage() {
     }
   }
 
+  async function handleStartWeakQuestions(test: Test) {
+    if (!backend || !username) return;
+    if (
+      isAtCapacity() &&
+      !activeSessions.find((s) => s.testId === String(test.id))
+    ) {
+      setCapacityError(true);
+      return;
+    }
+    try {
+      const mastery = await backend.getMasteryForTest(
+        username,
+        Number(test.id),
+      );
+      const weakIds = mastery
+        .filter((m) => !m.isMastered && Number(m.correctStreak) < 5)
+        .map((m) => String(m.questionId));
+      if (weakIds.length === 0) {
+        toast.success("No weak questions — you're doing great!");
+        return;
+      }
+      const sessionId = generateSessionId();
+      saveSession({
+        sessionId,
+        testId: String(test.id),
+        testName: test.name,
+        startedAt: new Date().toISOString(),
+        randomizeQuestions: true,
+        randomizeAnswers: true,
+        selectedSectionIds: [],
+        questionIds: weakIds,
+      });
+      navigate({
+        to: "/tests/$testId",
+        params: { testId: String(test.id) },
+        search: {
+          sessionId,
+          randomizeQuestions: "true",
+          randomizeAnswers: "true",
+          sections: "",
+          questionIds: weakIds.join(","),
+        },
+      });
+    } catch {
+      toast.error("Failed to load weak questions. Please try again.");
+    }
+  }
+
   function handleClearCache() {
     clearAllCache();
+    refreshData();
     toast.success("All cached test data cleared.");
     setClearCacheConfirm(false);
   }
@@ -831,10 +948,13 @@ export function UserTestsPage() {
             const hasActiveSession = activeSessions.some(
               (s) => s.testId === String(test.id),
             );
+            const mastery = masteryByTest[String(test.id)];
             return (
               <Card
                 key={String(test.id)}
-                className="shadow-subtle hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 flex flex-col"
+                className={`shadow-subtle hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 flex flex-col ${
+                  hasActiveSession ? "border-l-4 border-l-primary" : ""
+                }`}
                 data-ocid={`user.tests.item.${idx + 1}`}
               >
                 <CardHeader className="pb-3 flex-1">
@@ -855,6 +975,17 @@ export function UserTestsPage() {
                   <CardDescription className="line-clamp-2">
                     {test.description || "No description provided"}
                   </CardDescription>
+                  {/* Mastery badge */}
+                  {mastery ? (
+                    <div className="mt-1.5">
+                      <MasteryBadge
+                        masteredCount={mastery.mastered}
+                        totalCount={mastery.total}
+                      />
+                    </div>
+                  ) : (
+                    <Skeleton className="h-4 w-24 mt-1.5 rounded-full" />
+                  )}
                 </CardHeader>
                 <CardContent className="pt-0 space-y-2">
                   <Button
@@ -865,7 +996,7 @@ export function UserTestsPage() {
                     {hasActiveSession ? (
                       <>
                         <PlayCircle className="w-4 h-4" />
-                        Resume / New
+                        Resume →
                       </>
                     ) : (
                       <>
@@ -873,6 +1004,16 @@ export function UserTestsPage() {
                         <ChevronRight className="w-4 h-4" />
                       </>
                     )}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full gap-1.5 text-muted-foreground text-xs"
+                    onClick={() => handleStartWeakQuestions(test)}
+                    data-ocid={`user.tests.weak_questions_button.${idx + 1}`}
+                  >
+                    <Zap className="w-3.5 h-3.5 text-amber-500" />
+                    Practice Weak Questions
                   </Button>
                   <Button
                     variant="outline"

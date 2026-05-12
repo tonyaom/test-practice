@@ -27,6 +27,10 @@ export interface AdminUserInfo {
     { 'user' : null },
   'isActive' : boolean,
 }
+export interface AllTestData {
+  'tests' : Array<TestFullData>,
+  'manifest' : DataManifest,
+}
 export interface AnswerSubmission {
   'selectedOptions' : Array<bigint>,
   'orderedItems' : Array<bigint>,
@@ -47,6 +51,13 @@ export interface CreateQuestionInput {
 }
 export interface CreateSectionInput { 'name' : string, 'description' : string }
 export interface CreateTestInput { 'name' : string, 'description' : string }
+export interface DataManifest {
+  'testCount' : bigint,
+  'globalUpdatedAt' : string,
+  'sectionCount' : bigint,
+  'checksum' : string,
+  'questionCount' : bigint,
+}
 export type ExternalBlob = Uint8Array;
 export type LoginResult = { 'ok' : UserSession } |
   { 'err' : string } |
@@ -58,8 +69,6 @@ export interface Question {
   'explanation' : [] | [string],
   'questionUpdatedAt' : bigint,
   'text' : string,
-  'audioBlob' : [] | [Uint8Array],
-  'audioDownloadStatus' : [] | [string],
   'audioUrl' : [] | [string],
   'questionType' : QuestionType,
   'sectionId' : [] | [bigint],
@@ -116,6 +125,14 @@ export interface Section {
   'updatedAt' : bigint,
   'testId' : bigint,
 }
+export interface SectionData {
+  'id' : bigint,
+  'name' : string,
+  'createdAt' : bigint,
+  'description' : string,
+  'updatedAt' : bigint,
+  'testId' : bigint,
+}
 export type SectionId = bigint;
 export interface SectionMasteryInfo {
   'timeSpentSeconds' : bigint,
@@ -142,6 +159,15 @@ export interface Test {
   'createdAt' : bigint,
   'description' : string,
   'updatedAt' : bigint,
+}
+export interface TestFullData {
+  'id' : bigint,
+  'name' : string,
+  'createdAt' : bigint,
+  'description' : string,
+  'updatedAt' : bigint,
+  'questions' : Array<Question>,
+  'sections' : Array<SectionData>,
 }
 export type TestId = bigint;
 export interface TestMasteryInfo {
@@ -246,6 +272,11 @@ export interface _SERVICE {
   'addQuestion' : ActorMethod<[string, bigint, CreateQuestionInput], Question>,
   'adminActivateUser' : ActorMethod<[string, UserId], boolean>,
   'adminDeactivateUser' : ActorMethod<[string, UserId], boolean>,
+  'adminDeleteUser' : ActorMethod<
+    [string, UserId],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
   'adminGetUserDetailedProgress' : ActorMethod<
     [string, UserId],
     UserDetailedProgress
@@ -269,18 +300,14 @@ export interface _SERVICE {
     { 'ok' : null } |
       { 'err' : string }
   >,
-  'downloadAudio' : ActorMethod<
-    [string, bigint, string],
-    { 'ok' : null } |
-      { 'err' : string }
-  >,
   'enable2FA' : ActorMethod<
     [string, string],
     { 'ok' : null } |
       { 'err' : string }
   >,
   'getAdminDashboardStats' : ActorMethod<[string], AdminDashboardStats>,
-  'getAudioBlob' : ActorMethod<[bigint], [] | [Uint8Array]>,
+  'getAllTestData' : ActorMethod<[], AllTestData>,
+  'getDataManifest' : ActorMethod<[], DataManifest>,
   'getMasteryForTest' : ActorMethod<[string, TestId], Array<QuestionMastery>>,
   'getQuestion' : ActorMethod<[bigint], [] | [Question]>,
   'getSection' : ActorMethod<[bigint], [] | [Section]>,

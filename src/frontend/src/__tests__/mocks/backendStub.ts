@@ -287,6 +287,7 @@ export interface backendInterface {
     testId: bigint,
     sessionId: string,
     submissions: Array<AnswerSubmission>,
+    timeSpentSeconds: bigint,
   ): Promise<TestResult>;
   updatePassword(
     username: string,
@@ -335,13 +336,6 @@ export interface backendInterface {
     testId: bigint,
   ): Promise<Array<QuestionMastery>>;
   resetMyMastery(username: string, input: ResetMasteryInput): Promise<void>;
-  // Audio
-  downloadAudio(
-    username: string,
-    questionId: bigint,
-    audioUrl: string,
-  ): Promise<{ __kind__: "ok"; ok: null } | { __kind__: "err"; err: string }>;
-  getAudioBlob(questionId: bigint): Promise<Uint8Array | null>;
   // Admin: User Management
   adminListUsers(username: string): Promise<Array<AdminUserInfo>>;
   adminActivateUser(callerUsername: string, username: string): Promise<boolean>;
@@ -349,6 +343,10 @@ export interface backendInterface {
     callerUsername: string,
     username: string,
   ): Promise<boolean>;
+  adminDeleteUser(
+    callerUsername: string,
+    username: string,
+  ): Promise<{ __kind__: "ok"; ok: null } | { __kind__: "err"; err: string }>;
   adminGetUserProgress(
     callerUsername: string,
     username: string,

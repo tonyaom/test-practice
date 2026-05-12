@@ -80,6 +80,7 @@ mixin (
   /// Deactivate a user account (admin only).
   public shared func adminDeactivateUser(callerUsername : Text, username : Common.UserId) : async Bool {
     AuthLib.requireAdmin(users, callerUsername);
+    AuthLib.requireNotSeededAdmin(username);
     switch (users.get(username)) {
       case null { false };
       case (?u) {
@@ -88,6 +89,35 @@ mixin (
         true;
       };
     };
+  };
+
+  /// Permanently delete a user and all their mastery/progress data (admin only).
+  public shared func adminDeleteUser(callerUsername : Text, targetUsername : Common.UserId) : async { #ok; #err : Text } {
+    AuthLib.requireAdmin(users, callerUsername);
+    AuthLib.requireNotSeededAdmin(targetUsername);
+    if (callerUsername == targetUsername) {
+      Runtime.trap("Cannot delete your own account");
+    };
+    let result = AuthLib.deleteUser(users, targetUsername);
+    switch (result) {
+      case (#err e) { return #err(e) };
+      case (#ok) {};
+    };
+    // Remove all mastery records for the deleted user
+    let keysToRemove = mastery.keys().filter(
+      func(k : Text) : Bool { k.startsWith(#text (targetUsername # ":")) }
+    ).toArray();
+    for (key in keysToRemove.values()) {
+      mastery.remove(key);
+    };
+    // Remove all test results for the deleted user
+    let resultKeysToRemove = testResults.keys().filter(
+      func(k : Text) : Bool { k.startsWith(#text (targetUsername # ":")) }
+    ).toArray();
+    for (key in resultKeysToRemove.values()) {
+      testResults.remove(key);
+    };
+    #ok;
   };
 
   /// View a specific user's mastery progress for a test (admin only).

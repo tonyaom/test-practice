@@ -100,6 +100,16 @@ type TestMasteryInfo =
    totalQuestions: nat;
  };
 type TestId = nat;
+type TestFullData = 
+ record {
+   createdAt: int;
+   description: text;
+   id: nat;
+   name: text;
+   questions: vec Question;
+   sections: vec SectionData;
+   updatedAt: int;
+ };
 type Test = 
  record {
    createdAt: int;
@@ -131,6 +141,15 @@ type SectionMasteryInfo =
    totalInSection: nat;
  };
 type SectionId = nat;
+type SectionData = 
+ record {
+   createdAt: int;
+   description: text;
+   id: nat;
+   name: text;
+   testId: nat;
+   updatedAt: int;
+ };
 type Section = 
  record {
    createdAt: int;
@@ -194,8 +213,6 @@ type QuestionMastery =
 type QuestionId = nat;
 type Question = 
  record {
-   audioBlob: opt blob;
-   audioDownloadStatus: opt text;
    audioUrl: opt text;
    correctAnswers: vec nat;
    correctOrder: vec nat;
@@ -219,6 +236,14 @@ type LoginResult =
    requiresTOTP;
  };
 type ExternalBlob = blob;
+type DataManifest = 
+ record {
+   checksum: text;
+   globalUpdatedAt: text;
+   questionCount: nat;
+   sectionCount: nat;
+   testCount: nat;
+ };
 type CreateTestInput = 
  record {
    description: text;
@@ -248,6 +273,11 @@ type AnswerSubmission =
    questionId: nat;
    selectedOptions: vec nat;
    textAnswer: text;
+ };
+type AllTestData = 
+ record {
+   manifest: DataManifest;
+   tests: vec TestFullData;
  };
 type AdminUserInfo = 
  record {
@@ -284,6 +314,11 @@ service : {
    (Question);
   adminActivateUser: (callerUsername: text, username: UserId) -> (bool);
   adminDeactivateUser: (callerUsername: text, username: UserId) -> (bool);
+  adminDeleteUser: (callerUsername: text, targetUsername: UserId) ->
+   (variant {
+      err: text;
+      ok;
+    });
   adminGetUserDetailedProgress: (callerUsername: text, username: UserId) ->
    (UserDetailedProgress) query;
   adminGetUserProgress: (callerUsername: text, username: UserId, testId:
@@ -302,18 +337,14 @@ service : {
       err: text;
       ok;
     });
-  downloadAudio: (username: text, questionId: nat, audioUrl: text) ->
-   (variant {
-      err: text;
-      ok;
-    });
   enable2FA: (username: text, code: text) -> (variant {
                                                 err: text;
                                                 ok;
                                               });
   getAdminDashboardStats: (callerUsername: text) ->
    (AdminDashboardStats) query;
-  getAudioBlob: (questionId: nat) -> (opt blob) query;
+  getAllTestData: () -> (AllTestData) query;
+  getDataManifest: () -> (DataManifest) query;
   getMasteryForTest: (username: text, testId: TestId) ->
    (vec QuestionMastery) query;
   getQuestion: (questionId: nat) -> (opt Question) query;

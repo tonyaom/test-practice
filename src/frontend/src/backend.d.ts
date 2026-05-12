@@ -28,6 +28,10 @@ export interface UserSession {
     displayName?: string;
     role: UserRole;
 }
+export interface AllTestData {
+    tests: Array<TestFullData>;
+    manifest: DataManifest;
+}
 export interface AdminDashboardStats {
     totalTests: bigint;
     totalActiveUsers: bigint;
@@ -154,6 +158,23 @@ export interface Test {
     updatedAt: bigint;
 }
 export type QuestionId = bigint;
+export interface TestFullData {
+    id: bigint;
+    name: string;
+    createdAt: bigint;
+    description: string;
+    updatedAt: bigint;
+    questions: Array<Question>;
+    sections: Array<SectionData>;
+}
+export interface SectionData {
+    id: bigint;
+    name: string;
+    createdAt: bigint;
+    description: string;
+    updatedAt: bigint;
+    testId: bigint;
+}
 export interface TestResult {
     completedAt: bigint;
     timeSpentSeconds: bigint;
@@ -170,6 +191,13 @@ export interface QuestionResult {
     questionId: bigint;
 }
 export type UserId = string;
+export interface DataManifest {
+    testCount: bigint;
+    globalUpdatedAt: string;
+    sectionCount: bigint;
+    checksum: string;
+    questionCount: bigint;
+}
 export interface UpdateTestInput {
     name: string;
     description: string;
@@ -211,8 +239,6 @@ export interface Question {
     explanation?: string;
     questionUpdatedAt: bigint;
     text: string;
-    audioBlob?: Uint8Array;
-    audioDownloadStatus?: string;
     audioUrl?: string;
     questionType: QuestionType;
     sectionId?: bigint;
@@ -244,6 +270,13 @@ export interface backendInterface {
     addQuestion(username: string, testId: bigint, input: CreateQuestionInput): Promise<Question>;
     adminActivateUser(callerUsername: string, username: UserId): Promise<boolean>;
     adminDeactivateUser(callerUsername: string, username: UserId): Promise<boolean>;
+    adminDeleteUser(callerUsername: string, targetUsername: UserId): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     adminGetUserDetailedProgress(callerUsername: string, username: UserId): Promise<UserDetailedProgress>;
     adminGetUserProgress(callerUsername: string, username: UserId, testId: TestId): Promise<UserProgressInfo | null>;
     adminListUsers(username: string): Promise<Array<AdminUserInfo>>;
@@ -260,13 +293,6 @@ export interface backendInterface {
         __kind__: "err";
         err: string;
     }>;
-    downloadAudio(username: string, questionId: bigint, audioUrl: string): Promise<{
-        __kind__: "ok";
-        ok: null;
-    } | {
-        __kind__: "err";
-        err: string;
-    }>;
     enable2FA(username: string, code: string): Promise<{
         __kind__: "ok";
         ok: null;
@@ -275,7 +301,8 @@ export interface backendInterface {
         err: string;
     }>;
     getAdminDashboardStats(callerUsername: string): Promise<AdminDashboardStats>;
-    getAudioBlob(questionId: bigint): Promise<Uint8Array | null>;
+    getAllTestData(): Promise<AllTestData>;
+    getDataManifest(): Promise<DataManifest>;
     getMasteryForTest(username: string, testId: TestId): Promise<Array<QuestionMastery>>;
     getQuestion(questionId: bigint): Promise<Question | null>;
     getSection(sectionId: bigint): Promise<Section | null>;
