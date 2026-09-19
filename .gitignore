@@ -1,7 +1,4 @@
 node_modules/
+.expo/
 dist/
-.mops/
-.old/
-.platform/
-.pnpm-store/
-.cache/
+npm-debug.log*

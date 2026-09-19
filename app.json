@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "Hello World",
+    "slug": "test-practice-expo-hello",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "platforms": ["ios", "android", "web"],
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "experiments": {
+      "baseUrl": "/test-practice"
+    }
+  }
+}
