@@ -53,7 +53,8 @@
     }
 
     .start-button,
-    .restart-button {
+    .restart-button,
+    .check-button {
       font: inherit;
       font-size: 22px;
       font-weight: 700;
@@ -69,6 +70,13 @@
       display: none;
       gap: 18px;
       justify-items: center;
+    }
+
+    .check-button {
+      min-width: 180px;
+      font-size: 20px;
+      padding: 14px 28px;
+      touch-action: manipulation;
     }
 
     .progress {
@@ -266,6 +274,7 @@
       </div>
 
       <div id="feedback" class="feedback" role="status" aria-live="polite"></div>
+      <button id="checkButton" class="check-button" type="button">Check</button>
     </div>
 
     <div id="complete" class="complete">
@@ -300,6 +309,7 @@
     const grid = document.getElementById('grid');
     const answerLine = document.getElementById('answerLine');
     const feedback = document.getElementById('feedback');
+    const checkButton = document.getElementById('checkButton');
 
     const DIGIT_WIDTH = 72;
     const COMMA_WIDTH = 34;
@@ -317,6 +327,7 @@
     let setHadError = false;
     let nextQuestionTimer = null;
     let targetRegroupings = 1;
+    let currentValidator = null;
 
     function randomNumber(count) {
       if (count === 1) return Math.floor(Math.random() * 9) + 1;
@@ -563,16 +574,14 @@
 
       let wrongAttempts = 0;
 
-      slot.input.onkeydown = (event) => {
-        if (event.key !== 'Enter') return;
-
-        event.preventDefault();
+      const validateAnswer = () => {
         slot.input.value = slot.input.value.replace(/\D/g, '').slice(0, 1);
         if (slot.input.value === '') return;
 
         if (Number(slot.input.value) === step.expectedAnswer) {
           clearFeedback();
           slot.input.onkeydown = null;
+          currentValidator = null;
           lockSlot(slot, true);
 
           if (step.carryOut > 0) {
@@ -586,7 +595,7 @@
           setHadError = true;
 
           if (wrongAttempts >= 2) {
-            feedback.textContent = `The correct digit is ${step.expectedAnswer}. Type it and press Enter.`;
+            feedback.textContent = `The correct digit is ${step.expectedAnswer}. Type it, then tap Check.`;
             feedback.className = 'feedback success';
 
             setTimeout(() => {
@@ -598,6 +607,14 @@
           }
         }
       };
+
+      currentValidator = validateAnswer;
+
+      slot.input.onkeydown = (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        validateAnswer();
+      };
     }
 
     function activateCarry(step) {
@@ -607,16 +624,14 @@
 
       let wrongAttempts = 0;
 
-      carrySlot.input.onkeydown = (event) => {
-        if (event.key !== 'Enter') return;
-
-        event.preventDefault();
+      const validateCarry = () => {
         carrySlot.input.value = carrySlot.input.value.replace(/\D/g, '').slice(0, 1);
         if (carrySlot.input.value === '') return;
 
         if (Number(carrySlot.input.value) === step.carryOut) {
           clearFeedback();
           carrySlot.input.onkeydown = null;
+          currentValidator = null;
           lockSlot(carrySlot, true);
           stepIndex++;
           activateCurrentAnswer();
@@ -625,7 +640,7 @@
           setHadError = true;
 
           if (wrongAttempts >= 2) {
-            feedback.textContent = `The correct carry is ${step.carryOut}. Type it and press Enter.`;
+            feedback.textContent = `The correct carry is ${step.carryOut}. Type it, then tap Check.`;
             feedback.className = 'feedback success';
 
             setTimeout(() => {
@@ -636,6 +651,14 @@
             showWrong(carrySlot);
           }
         }
+      };
+
+      currentValidator = validateCarry;
+
+      carrySlot.input.onkeydown = (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        validateCarry();
       };
     }
 
@@ -748,6 +771,9 @@
 
     startButton.addEventListener('click', startSet);
     restartButton.addEventListener('click', startSet);
+    checkButton.addEventListener('click', () => {
+      if (currentValidator) currentValidator();
+    });
 
     updateDifficultyAvailability();
   </script>
