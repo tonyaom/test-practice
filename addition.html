@@ -77,6 +77,16 @@
       font-size: 20px;
       padding: 14px 28px;
       touch-action: manipulation;
+      position: fixed;
+      left: 50%;
+      bottom: max(14px, env(safe-area-inset-bottom));
+      transform: translateX(-50%);
+      z-index: 1000;
+      box-shadow: 0 4px 14px rgba(0,0,0,.18);
+    }
+
+    .practice {
+      padding-bottom: 84px;
     }
 
     .progress {
