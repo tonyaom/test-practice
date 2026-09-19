@@ -628,7 +628,10 @@
           currentValidator = null;
           lockSlot(slot, true);
 
-          if (step.carryOut > 0) {
+          // Only prompt a carry when there is a real operand column
+          // to the left. If carryIndex is 0, this is the final leading
+          // carry, so the child enters it directly in the bottom answer row.
+          if (step.carryOut > 0 && step.carryIndex > 0) {
             activateCarry(step);
           } else {
             stepIndex++;
