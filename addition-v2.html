@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>10 Question Addition Challenge</title>
+  <!-- build: final-carry-direct-to-answer-v2 -->
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #f7f7f7;
+      font-family: Arial, sans-serif;
+      color: #222;
+    }
+
+    .page {
+      display: grid;
+      gap: 18px;
+      justify-items: center;
+      padding: 24px;
+    }
+
+    .start-screen {
+      display: grid;
+      place-items: center;
+      min-height: 260px;
+    }
+
+    .start-panel {
+      display: grid;
+      gap: 14px;
+      justify-items: center;
+    }
+
+    .start-config {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .start-config select {
+      font: inherit;
+      padding: 8px 12px;
+      border: 1px solid #cfcfcf;
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .start-button,
+    .restart-button,
+    .check-button {
+      font: inherit;
+      font-size: 22px;
+      font-weight: 700;
+      padding: 16px 34px;
+      border: 1px solid #cfcfcf;
+      border-radius: 14px;
+      background: white;
+      cursor: pointer;
+      box-shadow: 0 3px 10px rgba(0,0,0,.08);
+    }
+
+    .practice {
+      display: none;
+      gap: 18px;
+      justify-items: center;
+    }
+
+    .back-button {
+      font: inherit;
+      font-size: 16px;
+      font-weight: 700;
+      padding: 10px 16px;
+      border: 1px solid #cfcfcf;
+      border-radius: 10px;
+      background: white;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0,0,0,.08);
+      position: fixed;
+      top: max(12px, env(safe-area-inset-top));
+      left: 12px;
+      z-index: 1000;
+      touch-action: manipulation;
+    }
+
+    .check-button {
+      min-width: 180px;
+      font-size: 20px;
+      padding: 14px 28px;
+      touch-action: manipulation;
+      position: fixed;
+      left: 50%;
+      bottom: max(14px, env(safe-area-inset-bottom));
+      transform: translateX(-50%);
+      z-index: 1000;
+      box-shadow: 0 4px 14px rgba(0,0,0,.18);
+    }
+
+    .practice {
+      padding-bottom: 84px;
+    }
+
+    .progress {
+      font-size: 17px;
+      font-weight: 700;
+      color: #555;
+    }
+
+    .worksheet {
+      position: relative;
+      padding-left: 52px;
+    }
+
+    .grid {
+      display: grid;
+      border-top: 2px solid #d3d3d3;
+      border-left: 2px solid #d3d3d3;
+      background: white;
+    }
+
+    .cell {
+      width: 72px;
+      height: 62px;
+      position: relative;
+      display: grid;
+      place-items: center;
+      border-right: 2px solid #d3d3d3;
+      border-bottom: 2px solid #d3d3d3;
+      font-size: 32px;
+      font-weight: 600;
+      background: #fff;
+    }
+
+    .cell.comma-cell {
+      width: 34px;
+    }
+
+    .comma-mark {
+      font-size: 32px;
+      line-height: 1;
+      transform: translateY(6px);
+    }
+
+    .digit-input {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      text-align: center;
+      font: inherit;
+      color: #222;
+      padding: 0;
+      line-height: 62px;
+      caret-color: #222;
+    }
+
+    .carry-cell .digit-input {
+      font-size: 24px;
+      color: #555;
+    }
+
+    .locked { background: #f3f3f3; }
+    .active {
+      background: #fffbe6;
+      box-shadow: inset 0 0 0 2px #999;
+    }
+    .correct { background: #f5f5f5; }
+
+    .operator {
+      position: absolute;
+      left: 10px;
+      top: 126px;
+      height: 62px;
+      display: flex;
+      align-items: center;
+      font-size: 38px;
+      font-weight: 700;
+    }
+
+    .answer-line {
+      position: absolute;
+      left: 52px;
+      top: 186px;
+      border-top: 4px solid #222;
+      pointer-events: none;
+    }
+
+    .feedback {
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 9px 16px;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 600;
+      visibility: hidden;
+    }
+
+    .feedback.wrong {
+      visibility: visible;
+      background: #fdecec;
+      border-color: #f2b8b5;
+      color: #9b2c2c;
+    }
+
+    .feedback.success {
+      visibility: visible;
+      background: #eaf8ec;
+      border-color: #b7dfbd;
+      color: #256b31;
+    }
+
+    .complete {
+      display: none;
+      min-height: 320px;
+      text-align: center;
+      align-content: center;
+      justify-items: center;
+      gap: 18px;
+    }
+
+    .complete h2 {
+      margin: 0;
+      font-size: 30px;
+    }
+
+    .sticker {
+      display: none;
+      width: 180px;
+      height: 180px;
+      border-radius: 50%;
+      place-items: center;
+      background: #fff3a6;
+      border: 6px solid #f3c94b;
+      box-shadow: 0 8px 22px rgba(0,0,0,.12);
+      font-size: 72px;
+      line-height: 1;
+    }
+
+    .sticker-text {
+      margin-top: -10px;
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .complete-message {
+      font-size: 18px;
+      color: #555;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="page">
+
+    <div id="startScreen" class="start-screen">
+      <div class="start-panel">
+        <div class="start-config">
+          <label for="digitConfig">Practice digits:</label>
+          <select id="digitConfig">
+            <option value="1">1 digit</option>
+            <option value="2">2 digits</option>
+            <option value="3">3 digits</option>
+            <option value="4" selected>4 digits</option>
+            <option value="5">5 digits</option>
+            <option value="6">6 digits</option>
+          </select>
+        </div>
+
+        <div class="start-config">
+          <label for="difficultyConfig">Difficulty:</label>
+          <select id="difficultyConfig">
+            <option value="0">Very Easy — no regrouping</option>
+            <option value="1" selected>Easy — 1 regrouping</option>
+            <option value="2">Medium — 2 regroupings</option>
+            <option value="3">Hard — 3 regroupings</option>
+            <option value="4">Very Hard — 4 regroupings</option>
+          </select>
+        </div>
+
+        <button id="startButton" class="start-button" type="button">Start</button>
+      </div>
+    </div>
+
+    <div id="practice" class="practice">
+      <button id="backButton" class="back-button" type="button">← Back</button>
+      <div id="progress" class="progress">Question 1 of 10</div>
+
+      <div class="worksheet">
+        <div class="operator">+</div>
+        <div id="answerLine" class="answer-line"></div>
+        <div id="grid" class="grid"></div>
+      </div>
+
+      <div id="feedback" class="feedback" role="status" aria-live="polite"></div>
+      <button id="checkButton" class="check-button" type="button">Check</button>
+    </div>
+
+    <div id="complete" class="complete">
+      <h2>10 questions complete!</h2>
+
+      <div id="sticker" class="sticker">
+        <div>
+          ⭐
+          <div class="sticker-text">PERFECT 10</div>
+        </div>
+      </div>
+
+      <div id="completeMessage" class="complete-message"></div>
+
+      <button id="restartButton" class="restart-button" type="button">Start another set</button>
+    </div>
+
+  </div>
+
+  <script>
+    const startScreen = document.getElementById('startScreen');
+    const startButton = document.getElementById('startButton');
+    const digitConfig = document.getElementById('digitConfig');
+    const difficultyConfig = document.getElementById('difficultyConfig');
+    const practice = document.getElementById('practice');
+    const complete = document.getElementById('complete');
+    const restartButton = document.getElementById('restartButton');
+    const sticker = document.getElementById('sticker');
+    const completeMessage = document.getElementById('completeMessage');
+    const progress = document.getElementById('progress');
+
+    const grid = document.getElementById('grid');
+    const answerLine = document.getElementById('answerLine');
+    const feedback = document.getElementById('feedback');
+    const checkButton = document.getElementById('checkButton');
+    const backButton = document.getElementById('backButton');
+
+    const DIGIT_WIDTH = 72;
+    const COMMA_WIDTH = 34;
+
+    let digitCount = 4;
+    let a = 0;
+    let b = 0;
+
+    let answerSlots = [];
+    let carrySlots = [];
+    let steps = [];
+    let stepIndex = 0;
+
+    let questionNumber = 0;
+    let setHadError = false;
+    let nextQuestionTimer = null;
+    let targetRegroupings = 1;
+    let currentValidator = null;
+    let currentActiveInput = null;
+
+    function randomNumber(count) {
+      if (count === 1) return Math.floor(Math.random() * 9) + 1;
+      const min = 10 ** (count - 1);
+      const max = (10 ** count) - 1;
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+
+    function countRegroupings(x, y, count) {
+      const xText = String(x).padStart(count, '0');
+      const yText = String(y).padStart(count, '0');
+
+      let carry = 0;
+      let regroupings = 0;
+
+      for (let i = count - 1; i >= 0; i--) {
+        const sum = Number(xText[i]) + Number(yText[i]) + carry;
+        carry = sum >= 10 ? 1 : 0;
+        if (carry) regroupings++;
+      }
+
+      return regroupings;
+    }
+
+    function generateQuestionWithRegroupings(count, target) {
+      // Rejection sampling is simple and reliable for 1–6 digit questions.
+      for (let attempt = 0; attempt < 50000; attempt++) {
+        const x = randomNumber(count);
+        const y = randomNumber(count);
+
+        if (countRegroupings(x, y, count) === target) {
+          return { x, y };
+        }
+      }
+
+      // Deterministic fallback if random search somehow misses.
+      const min = count === 1 ? 1 : 10 ** (count - 1);
+      const max = 10 ** count - 1;
+
+      for (let x = min; x <= Math.min(max, min + 20000); x++) {
+        for (let y = min; y <= Math.min(max, min + 20000); y++) {
+          if (countRegroupings(x, y, count) === target) {
+            return { x, y };
+          }
+        }
+      }
+
+      // Final safe fallback: generate any question.
+      return { x: randomNumber(count), y: randomNumber(count) };
+    }
+
+    function updateDifficultyAvailability() {
+      const count = Number(digitConfig.value);
+
+      [...difficultyConfig.options].forEach(option => {
+        option.disabled = Number(option.value) > count;
+      });
+
+      if (Number(difficultyConfig.value) > count) {
+        difficultyConfig.value = String(count);
+      }
+    }
+
+    function separatorAfterSlot(slotIndex, numericSlotCount) {
+      const digitsToRight = numericSlotCount - 1 - slotIndex;
+      return digitsToRight > 0 && digitsToRight % 3 === 0;
+    }
+
+    function numberSlots(value, numericSlotCount) {
+      return String(value).padStart(numericSlotCount, ' ').split('');
+    }
+
+    function shouldShowComma(slotValues, slotIndex) {
+      const left = slotValues.slice(0, slotIndex + 1).join('').trim();
+      const right = slotValues.slice(slotIndex + 1).join('').trim();
+      return left.length > 0 && right.length > 0;
+    }
+
+    function createDigitCell(rowType, value = '') {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+
+      if (rowType === 'carry') {
+        cell.classList.add('carry-cell');
+      }
+
+      if (rowType === 'operand') {
+        cell.textContent = value === ' ' ? '' : value;
+        return { cell, input: null };
+      }
+
+      const input = document.createElement('input');
+      input.className = 'digit-input';
+      input.type = 'text';
+      input.inputMode = 'numeric';
+      input.autocomplete = 'off';
+      input.maxLength = 1;
+      input.readOnly = true;
+
+      input.addEventListener('beforeinput', (event) => {
+        if (
+          event.inputType === 'insertText' &&
+          event.data &&
+          !/^[0-9]$/.test(event.data)
+        ) {
+          event.preventDefault();
+        }
+      });
+
+      input.addEventListener('input', () => {
+        input.value = input.value.replace(/\D/g, '').slice(0, 1);
+      });
+
+      input.addEventListener('paste', (event) => {
+        event.preventDefault();
+        const text = (event.clipboardData || window.clipboardData)
+          .getData('text')
+          .replace(/\D/g, '');
+
+        if (text) {
+          input.value = text[0];
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      });
+
+      cell.appendChild(input);
+      return { cell, input };
+    }
+
+    function createCommaCell(showComma) {
+      const cell = document.createElement('div');
+      cell.className = 'cell comma-cell';
+
+      if (showComma) {
+        const mark = document.createElement('span');
+        mark.className = 'comma-mark';
+        mark.textContent = ',';
+        cell.appendChild(mark);
+      }
+
+      return cell;
+    }
+
+    function buildRow(rowType, slotValues, numericSlotCount) {
+      const rowDigits = [];
+
+      for (let i = 0; i < numericSlotCount; i++) {
+        const value = slotValues[i] ?? '';
+        const { cell, input } = createDigitCell(rowType, value);
+        grid.appendChild(cell);
+        rowDigits.push({ cell, input });
+
+        if (separatorAfterSlot(i, numericSlotCount)) {
+          let showComma = false;
+
+          if (rowType === 'operand' || rowType === 'answer') {
+            showComma = shouldShowComma(slotValues, i);
+          }
+
+          grid.appendChild(createCommaCell(showComma));
+        }
+      }
+
+      return rowDigits;
+    }
+
+    function lockSlot(slot, correct = false) {
+      slot.input.readOnly = true;
+      slot.cell.classList.remove('active', 'locked', 'correct');
+      slot.cell.classList.add(correct ? 'correct' : 'locked');
+
+      if (currentActiveInput === slot.input) {
+        currentActiveInput = null;
+      }
+    }
+
+    function focusCurrentInput() {
+      if (
+        !currentActiveInput ||
+        currentActiveInput.readOnly ||
+        practice.style.display !== 'grid'
+      ) {
+        return;
+      }
+
+      currentActiveInput.focus({ preventScroll: true });
+      currentActiveInput.select();
+    }
+
+    function activateSlot(slot) {
+      slot.input.readOnly = false;
+      slot.cell.classList.remove('locked', 'correct');
+      slot.cell.classList.add('active');
+      currentActiveInput = slot.input;
+
+      // Focus synchronously so mobile browsers open the numeric keyboard
+      // directly from the child's Start / Check interaction.
+      focusCurrentInput();
+    }
+
+    function clearFeedback() {
+      feedback.textContent = '';
+      feedback.className = 'feedback';
+    }
+
+    function showWrong(slot) {
+      setHadError = true;
+      feedback.textContent = 'Almost — check that digit and try again.';
+      feedback.className = 'feedback wrong';
+
+      setTimeout(focusCurrentInput, 0);
+    }
+
+    function buildSteps() {
+      const aText = String(a).padStart(digitCount, '0');
+      const bText = String(b).padStart(digitCount, '0');
+
+      steps = [];
+      let carryIn = 0;
+
+      for (let sourceIndex = digitCount - 1; sourceIndex >= 0; sourceIndex--) {
+        const answerIndex = sourceIndex + 1;
+        const sum = Number(aText[sourceIndex]) + Number(bText[sourceIndex]) + carryIn;
+        const expectedAnswer = sum % 10;
+        const carryOut = Math.floor(sum / 10);
+
+        steps.push({
+          answerIndex,
+          expectedAnswer,
+          carryOut,
+          carryIndex: answerIndex - 1
+        });
+
+        carryIn = carryOut;
+      }
+
+      if (carryIn > 0) {
+        steps.push({
+          answerIndex: 0,
+          expectedAnswer: carryIn,
+          carryOut: 0,
+          carryIndex: -1
+        });
+      }
+    }
+
+    function activateCurrentAnswer() {
+      if (stepIndex >= steps.length) {
+        finishQuestion();
+        return;
+      }
+
+      const step = steps[stepIndex];
+      const slot = answerSlots[step.answerIndex];
+
+      activateSlot(slot);
+
+      let wrongAttempts = 0;
+
+      const validateAnswer = () => {
+        slot.input.value = slot.input.value.replace(/\D/g, '').slice(0, 1);
+        if (slot.input.value === '') return;
+
+        if (Number(slot.input.value) === step.expectedAnswer) {
+          clearFeedback();
+          slot.input.onkeydown = null;
+          currentValidator = null;
+          lockSlot(slot, true);
+
+          // Only prompt a carry when there is a real operand column
+          // to the left. If carryIndex is 0, this is the final leading
+          // carry, so the child enters it directly in the bottom answer row.
+          if (step.carryOut > 0 && step.carryIndex > 0) {
+            activateCarry(step);
+          } else {
+            stepIndex++;
+            activateCurrentAnswer();
+          }
+        } else {
+          wrongAttempts++;
+          setHadError = true;
+
+          if (wrongAttempts >= 2) {
+            feedback.textContent = `The correct digit is ${step.expectedAnswer}. Type it, then tap Check.`;
+            feedback.className = 'feedback success';
+
+            setTimeout(focusCurrentInput, 0);
+          } else {
+            showWrong(slot);
+          }
+        }
+      };
+
+      currentValidator = validateAnswer;
+
+      slot.input.onkeydown = (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        validateAnswer();
+      };
+    }
+
+    function activateCarry(step) {
+      const carrySlot = carrySlots[step.carryIndex];
+      carrySlot.input.value = '';
+      activateSlot(carrySlot);
+
+      let wrongAttempts = 0;
+
+      const validateCarry = () => {
+        carrySlot.input.value = carrySlot.input.value.replace(/\D/g, '').slice(0, 1);
+        if (carrySlot.input.value === '') return;
+
+        if (Number(carrySlot.input.value) === step.carryOut) {
+          clearFeedback();
+          carrySlot.input.onkeydown = null;
+          currentValidator = null;
+          lockSlot(carrySlot, true);
+          stepIndex++;
+          activateCurrentAnswer();
+        } else {
+          wrongAttempts++;
+          setHadError = true;
+
+          if (wrongAttempts >= 2) {
+            feedback.textContent = `The correct carry is ${step.carryOut}. Type it, then tap Check.`;
+            feedback.className = 'feedback success';
+
+            setTimeout(focusCurrentInput, 0);
+          } else {
+            showWrong(carrySlot);
+          }
+        }
+      };
+
+      currentValidator = validateCarry;
+
+      carrySlot.input.onkeydown = (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        validateCarry();
+      };
+    }
+
+    function finishQuestion() {
+      currentActiveInput = null;
+      currentValidator = null;
+      feedback.textContent = 'Great job! 🎉';
+      feedback.className = 'feedback success';
+
+      nextQuestionTimer = setTimeout(() => {
+        clearFeedback();
+
+        if (questionNumber >= 10) {
+          finishSet();
+        } else {
+          renderQuestion();
+        }
+      }, 1000);
+    }
+
+    function finishSet() {
+      practice.style.display = 'none';
+      complete.style.display = 'grid';
+
+      if (!setHadError) {
+        sticker.style.display = 'grid';
+        completeMessage.textContent = 'Amazing — 10 out of 10 with no mistakes!';
+      } else {
+        sticker.style.display = 'none';
+        completeMessage.textContent = 'Nice work — you finished all 10 questions.';
+      }
+    }
+
+    function renderQuestion() {
+      if (nextQuestionTimer) {
+        clearTimeout(nextQuestionTimer);
+        nextQuestionTimer = null;
+      }
+
+      questionNumber++;
+      progress.textContent = `Question ${questionNumber} of 10`;
+
+      const generated = generateQuestionWithRegroupings(
+        digitCount,
+        targetRegroupings
+      );
+      a = generated.x;
+      b = generated.y;
+
+      const numericSlotCount = digitCount + 1;
+      const aSlots = numberSlots(a, numericSlotCount);
+      const bSlots = numberSlots(b, numericSlotCount);
+      const answerSlotsDisplay = numberSlots(a + b, numericSlotCount);
+      const blanks = Array(numericSlotCount).fill('');
+
+      const columnWidths = [];
+      for (let i = 0; i < numericSlotCount; i++) {
+        columnWidths.push(`${DIGIT_WIDTH}px`);
+        if (separatorAfterSlot(i, numericSlotCount)) {
+          columnWidths.push(`${COMMA_WIDTH}px`);
+        }
+      }
+
+      grid.innerHTML = '';
+      grid.style.gridTemplateColumns = columnWidths.join(' ');
+      grid.style.gridTemplateRows = 'repeat(4, 62px)';
+
+      const width = columnWidths.reduce((sum, width) => {
+        return sum + Number.parseInt(width, 10);
+      }, 0);
+
+      answerLine.style.width = `${width}px`;
+
+      carrySlots = buildRow('carry', blanks, numericSlotCount);
+      buildRow('operand', aSlots, numericSlotCount);
+      buildRow('operand', bSlots, numericSlotCount);
+      answerSlots = buildRow('answer', answerSlotsDisplay, numericSlotCount);
+
+      carrySlots.forEach(slot => {
+        slot.input.value = '';
+        slot.input.oninput = null;
+        slot.input.onkeydown = null;
+        lockSlot(slot);
+      });
+
+      answerSlots.forEach(slot => {
+        slot.input.value = '';
+        slot.input.oninput = null;
+        slot.input.onkeydown = null;
+        lockSlot(slot);
+      });
+
+      clearFeedback();
+      buildSteps();
+      stepIndex = 0;
+      activateCurrentAnswer();
+    }
+
+    function backToConfig() {
+      if (nextQuestionTimer) {
+        clearTimeout(nextQuestionTimer);
+        nextQuestionTimer = null;
+      }
+
+      currentValidator = null;
+      currentActiveInput = null;
+
+      if (document.activeElement && typeof document.activeElement.blur === 'function') {
+        document.activeElement.blur();
+      }
+
+      practice.style.display = 'none';
+      complete.style.display = 'none';
+      startScreen.style.display = 'grid';
+      clearFeedback();
+    }
+
+    function startSet() {
+      digitCount = Number(digitConfig.value);
+      targetRegroupings = Number(difficultyConfig.value);
+      questionNumber = 0;
+      setHadError = false;
+      sticker.style.display = 'none';
+      complete.style.display = 'none';
+      startScreen.style.display = 'none';
+      practice.style.display = 'grid';
+      renderQuestion();
+    }
+
+    digitConfig.addEventListener('change', updateDifficultyAvailability);
+
+    startButton.addEventListener('click', startSet);
+    restartButton.addEventListener('click', startSet);
+    backButton.addEventListener('click', backToConfig);
+
+    // Keep the current digit field focused when Check is tapped on mobile.
+    checkButton.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+    });
+
+    checkButton.addEventListener('click', () => {
+      if (currentValidator) currentValidator();
+      setTimeout(focusCurrentInput, 0);
+    });
+
+    // During practice, tapping anywhere except Back or Check must not steal
+    // focus from the one active answer/carry input.
+    document.addEventListener('pointerdown', (event) => {
+      if (
+        practice.style.display !== 'grid' ||
+        !currentActiveInput ||
+        currentActiveInput.readOnly
+      ) {
+        return;
+      }
+
+      if (event.target === backButton || event.target === checkButton) {
+        return;
+      }
+
+      if (event.target !== currentActiveInput) {
+        event.preventDefault();
+        focusCurrentInput();
+      }
+    });
+
+    // If focus is lost for another browser/UI reason, restore it immediately
+    // while a practice digit is still active.
+    document.addEventListener('focusout', () => {
+      if (
+        practice.style.display === 'grid' &&
+        currentActiveInput &&
+        !currentActiveInput.readOnly
+      ) {
+        setTimeout(focusCurrentInput, 0);
+      }
+    });
+
+    updateDifficultyAvailability();
+  </script>
+</body>
+</html>
