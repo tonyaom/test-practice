@@ -72,6 +72,23 @@
       justify-items: center;
     }
 
+    .back-button {
+      font: inherit;
+      font-size: 16px;
+      font-weight: 700;
+      padding: 10px 16px;
+      border: 1px solid #cfcfcf;
+      border-radius: 10px;
+      background: white;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0,0,0,.08);
+      position: fixed;
+      top: max(12px, env(safe-area-inset-top));
+      left: 12px;
+      z-index: 1000;
+      touch-action: manipulation;
+    }
+
     .check-button {
       min-width: 180px;
       font-size: 20px;
@@ -275,6 +292,7 @@
     </div>
 
     <div id="practice" class="practice">
+      <button id="backButton" class="back-button" type="button">← Back</button>
       <div id="progress" class="progress">Question 1 of 10</div>
 
       <div class="worksheet">
@@ -320,6 +338,7 @@
     const answerLine = document.getElementById('answerLine');
     const feedback = document.getElementById('feedback');
     const checkButton = document.getElementById('checkButton');
+    const backButton = document.getElementById('backButton');
 
     const DIGIT_WIDTH = 72;
     const COMMA_WIDTH = 34;
@@ -765,6 +784,24 @@
       activateCurrentAnswer();
     }
 
+    function backToConfig() {
+      if (nextQuestionTimer) {
+        clearTimeout(nextQuestionTimer);
+        nextQuestionTimer = null;
+      }
+
+      currentValidator = null;
+
+      if (document.activeElement && typeof document.activeElement.blur === 'function') {
+        document.activeElement.blur();
+      }
+
+      practice.style.display = 'none';
+      complete.style.display = 'none';
+      startScreen.style.display = 'grid';
+      clearFeedback();
+    }
+
     function startSet() {
       digitCount = Number(digitConfig.value);
       targetRegroupings = Number(difficultyConfig.value);
@@ -781,6 +818,7 @@
 
     startButton.addEventListener('click', startSet);
     restartButton.addEventListener('click', startSet);
+    backButton.addEventListener('click', backToConfig);
     checkButton.addEventListener('click', () => {
       if (currentValidator) currentValidator();
     });
