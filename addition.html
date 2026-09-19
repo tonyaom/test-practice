@@ -357,6 +357,7 @@
     let nextQuestionTimer = null;
     let targetRegroupings = 1;
     let currentValidator = null;
+    let currentActiveInput = null;
 
     function randomNumber(count) {
       if (count === 1) return Math.floor(Math.random() * 9) + 1;
@@ -528,17 +529,34 @@
       slot.input.readOnly = true;
       slot.cell.classList.remove('active', 'locked', 'correct');
       slot.cell.classList.add(correct ? 'correct' : 'locked');
+
+      if (currentActiveInput === slot.input) {
+        currentActiveInput = null;
+      }
+    }
+
+    function focusCurrentInput() {
+      if (
+        !currentActiveInput ||
+        currentActiveInput.readOnly ||
+        practice.style.display !== 'grid'
+      ) {
+        return;
+      }
+
+      currentActiveInput.focus({ preventScroll: true });
+      currentActiveInput.select();
     }
 
     function activateSlot(slot) {
       slot.input.readOnly = false;
       slot.cell.classList.remove('locked', 'correct');
       slot.cell.classList.add('active');
+      currentActiveInput = slot.input;
 
-      setTimeout(() => {
-        slot.input.focus();
-        slot.input.select();
-      }, 0);
+      // Focus synchronously so mobile browsers open the numeric keyboard
+      // directly from the child's Start / Check interaction.
+      focusCurrentInput();
     }
 
     function clearFeedback() {
@@ -551,10 +569,7 @@
       feedback.textContent = 'Almost — check that digit and try again.';
       feedback.className = 'feedback wrong';
 
-      setTimeout(() => {
-        slot.input.focus();
-        slot.input.select();
-      }, 0);
+      setTimeout(focusCurrentInput, 0);
     }
 
     function buildSteps() {
@@ -627,10 +642,7 @@
             feedback.textContent = `The correct digit is ${step.expectedAnswer}. Type it, then tap Check.`;
             feedback.className = 'feedback success';
 
-            setTimeout(() => {
-              slot.input.focus();
-              slot.input.select();
-            }, 0);
+            setTimeout(focusCurrentInput, 0);
           } else {
             showWrong(slot);
           }
@@ -672,10 +684,7 @@
             feedback.textContent = `The correct carry is ${step.carryOut}. Type it, then tap Check.`;
             feedback.className = 'feedback success';
 
-            setTimeout(() => {
-              carrySlot.input.focus();
-              carrySlot.input.select();
-            }, 0);
+            setTimeout(focusCurrentInput, 0);
           } else {
             showWrong(carrySlot);
           }
@@ -692,6 +701,8 @@
     }
 
     function finishQuestion() {
+      currentActiveInput = null;
+      currentValidator = null;
       feedback.textContent = 'Great job! 🎉';
       feedback.className = 'feedback success';
 
@@ -791,6 +802,7 @@
       }
 
       currentValidator = null;
+      currentActiveInput = null;
 
       if (document.activeElement && typeof document.activeElement.blur === 'function') {
         document.activeElement.blur();
@@ -819,8 +831,48 @@
     startButton.addEventListener('click', startSet);
     restartButton.addEventListener('click', startSet);
     backButton.addEventListener('click', backToConfig);
+
+    // Keep the current digit field focused when Check is tapped on mobile.
+    checkButton.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+    });
+
     checkButton.addEventListener('click', () => {
       if (currentValidator) currentValidator();
+      setTimeout(focusCurrentInput, 0);
+    });
+
+    // During practice, tapping anywhere except Back or Check must not steal
+    // focus from the one active answer/carry input.
+    document.addEventListener('pointerdown', (event) => {
+      if (
+        practice.style.display !== 'grid' ||
+        !currentActiveInput ||
+        currentActiveInput.readOnly
+      ) {
+        return;
+      }
+
+      if (event.target === backButton || event.target === checkButton) {
+        return;
+      }
+
+      if (event.target !== currentActiveInput) {
+        event.preventDefault();
+        focusCurrentInput();
+      }
+    });
+
+    // If focus is lost for another browser/UI reason, restore it immediately
+    // while a practice digit is still active.
+    document.addEventListener('focusout', () => {
+      if (
+        practice.style.display === 'grid' &&
+        currentActiveInput &&
+        !currentActiveInput.readOnly
+      ) {
+        setTimeout(focusCurrentInput, 0);
+      }
     });
 
     updateDifficultyAvailability();
